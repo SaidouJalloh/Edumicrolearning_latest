@@ -239,6 +239,8 @@ app.use('*', (req, res) => {
             'GET /health',
             'POST /test',
             'POST /ai/groq-plan',
+            'POST /ai/generate-plan',
+            'POST /ai/simple-plan',
             'POST /ai/generate-demo-steps',
             'POST /ai/generate-powerpoint'
         ],
