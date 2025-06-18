@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Créer un tableau croisé dynamique Excel - EduPro AI</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Segoe UI, Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #1F2937;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        .presentation-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .slide {
+            width: 90vw;
+            max-width: 1200px;
+            height: 80vh;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            display: none;
+            padding: 60px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .slide.active {
+            display: flex;
+            flex-direction: column;
+            animation: slideIn 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+        
+        .slide::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: linear-gradient(90deg, #1E40AF, #3B82F6);
+            border-radius: 24px 24px 0 0;
+        }
+        
+        .slide-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #EFF6FF;
+        }
+        
+        .slide-number {
+            background: #1E40AF;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .slide-title {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #1E40AF, #3B82F6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 16px;
+            line-height: 1.2;
+        }
+        
+        .slide-subtitle {
+            font-size: 1.5rem;
+            color: #3B82F6;
+            font-weight: 300;
+            margin-bottom: 40px;
+        }
+        
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            height: 100%;
+        }
+        
+        .content-card {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 32px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        
+        .content-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .step-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 24px;
+            padding: 20px;
+            background: #EFF6FF;
+            border-radius: 12px;
+            border-left: 4px solid #1E40AF;
+            transition: all 0.3s ease;
+        }
+        
+        .step-item:hover {
+            transform: translateX(8px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .step-number {
+            width: 48px;
+            height: 48px;
+            background: #1E40AF;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 18px;
+            margin-right: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .step-content h3 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #1F2937;
+        }
+        
+        .step-content p {
+            color: #3B82F6;
+            line-height: 1.6;
+            font-size: 1rem;
+        }
+        
+        .navigation {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 16px;
+            z-index: 1000;
+        }
+        
+        .nav-button {
+            background: #1E40AF;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        .nav-button:hover {
+            background: #3B82F6;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+        }
+        
+        .nav-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #1E40AF, #3B82F6);
+            transition: width 0.3s ease;
+            z-index: 1001;
+        }
+        
+        .floating-elements {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        
+        .floating-circle {
+            position: absolute;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #1E40AF20, #3B82F620);
+            animation: float 6s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-20px) rotate(180deg); }
+        }
+        
+        .logo {
+            position: absolute;
+            top: 30px;
+            right: 30px;
+            background: #1E40AF;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            font-weight: 700;
+            font-size: 14px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .slide-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #EFF6FF;
+            font-size: 14px;
+            color: #3B82F6;
+        }
+        
+        @media (max-width: 768px) {
+            .slide {
+                width: 95vw;
+                height: 90vh;
+                padding: 30px;
+            }
+            
+            .slide-title {
+                font-size: 2rem;
+            }
+            
+            .content-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="progress-bar" id="progressBar"></div>
+    <div class="logo">EduPro AI</div>
+    
+    <div class="presentation-container">
+        
+    <div class="slide active" data-slide="0">
+        <div class="slide-content">
+            <h1 class="slide-title">💻 Créer un tableau croisé dynamique Excel</h1>
+            <p class="slide-subtitle">Formation micro-learning professionnelle</p>
+            <div class="content-grid">
+                <div class="content-card">
+                    <h3 style="color: #1E40AF; margin-bottom: 20px;">📋 Aperçu de la formation</h3>
+                    <p style="font-size: 1.1rem; line-height: 1.6;">
+                        Formation pratique conçue pour vous rendre opérationnel rapidement.
+                    </p>
+                    <div style="margin-top: 24px; padding: 16px; background: #EFF6FF; border-radius: 8px;">
+                        <strong>⏱️ Durée totale:</strong> 5.5 minutes
+                    </div>
+                </div>
+                <div class="content-card">
+                    <h3 style="color: #1E40AF; margin-bottom: 20px;">🎯 Objectifs</h3>
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">✓</span>
+                            Maîtriser les concepts clés
+                        </li>
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">✓</span>
+                            Appliquer immédiatement
+                        </li>
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">✓</span>
+                            Gagner en efficacité
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="slide-footer">
+            <span>Généré par EduPro AI</span>
+            <span>Slide 1 / 6</span>
+        </div>
+    </div>
+  
+      <div class="slide" data-slide="1">
+          <div class="slide-header">
+              <div class="slide-number">Étape 1</div>
+              <div style="text-align: right; color: #3B82F6;">
+                  <div style="font-size: 14px;">⏱️ 30s</div>
+              </div>
+          </div>
+          <div class="slide-content">
+              <h1 class="slide-title">🎯 Introduction</h1>
+              <div class="step-item">
+                  <div class="step-number">1</div>
+                  <div class="step-content">
+                      <h3>Introduction</h3>
+                      <p>Découvrez les TCD Excel pour analyser vos données rapidement</p>
+                  </div>
+              </div>
+              
+                  <div class="content-card" style="margin-top: 30px;">
+                      <h3 style="color: #1E40AF; margin-bottom: 16px;">💡 Points clés à retenir</h3>
+                      <ul style="list-style: none; padding: 0;">
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Suivez chaque étape dans l'ordre</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Vérifiez le résultat à chaque action</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ N'hésitez pas à répéter si nécessaire</li>
+                      </ul>
+                  </div>
+              
+          </div>
+          <div class="slide-footer">
+              <span>EduPro AI • Formation demonstrative</span>
+              <span>Slide 2 / 6</span>
+          </div>
+      </div>
+    
+      <div class="slide" data-slide="2">
+          <div class="slide-header">
+              <div class="slide-number">Étape 2</div>
+              <div style="text-align: right; color: #3B82F6;">
+                  <div style="font-size: 14px;">⏱️ 90s</div>
+              </div>
+          </div>
+          <div class="slide-content">
+              <h1 class="slide-title">📊 Sélection des données</h1>
+              <div class="step-item">
+                  <div class="step-number">2</div>
+                  <div class="step-content">
+                      <h3>Sélection des données</h3>
+                      <p>Étapes:<br>&nbsp;&nbsp;&nbsp;&nbsp;- Cliquez sur cellule A1<br>&nbsp;&nbsp;&nbsp;&nbsp;- Utilisez Ctrl+Shift+Fin pour sélectionner<br>&nbsp;&nbsp;&nbsp;&nbsp;- Vérifiez les en-têtes</p>
+                  </div>
+              </div>
+              
+                  <div class="content-card" style="margin-top: 30px;">
+                      <h3 style="color: #1E40AF; margin-bottom: 16px;">💡 Points clés à retenir</h3>
+                      <ul style="list-style: none; padding: 0;">
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Suivez chaque étape dans l'ordre</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Vérifiez le résultat à chaque action</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ N'hésitez pas à répéter si nécessaire</li>
+                      </ul>
+                  </div>
+              
+          </div>
+          <div class="slide-footer">
+              <span>EduPro AI • Formation demonstrative</span>
+              <span>Slide 3 / 6</span>
+          </div>
+      </div>
+    
+      <div class="slide" data-slide="3">
+          <div class="slide-header">
+              <div class="slide-number">Étape 3</div>
+              <div style="text-align: right; color: #3B82F6;">
+                  <div style="font-size: 14px;">⏱️ 120s</div>
+              </div>
+          </div>
+          <div class="slide-content">
+              <h1 class="slide-title">⚙️ Création du TCD</h1>
+              <div class="step-item">
+                  <div class="step-number">3</div>
+                  <div class="step-content">
+                      <h3>Création du TCD</h3>
+                      <p>Onglet Insertion → Tableau croisé dynamique → Configuration des zones</p>
+                  </div>
+              </div>
+              
+                  <div class="content-card" style="margin-top: 30px;">
+                      <h3 style="color: #1E40AF; margin-bottom: 16px;">💡 Points clés à retenir</h3>
+                      <ul style="list-style: none; padding: 0;">
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Suivez chaque étape dans l'ordre</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Vérifiez le résultat à chaque action</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ N'hésitez pas à répéter si nécessaire</li>
+                      </ul>
+                  </div>
+              
+          </div>
+          <div class="slide-footer">
+              <span>EduPro AI • Formation demonstrative</span>
+              <span>Slide 4 / 6</span>
+          </div>
+      </div>
+    
+      <div class="slide" data-slide="4">
+          <div class="slide-header">
+              <div class="slide-number">Étape 4</div>
+              <div style="text-align: right; color: #3B82F6;">
+                  <div style="font-size: 14px;">⏱️ 90s</div>
+              </div>
+          </div>
+          <div class="slide-content">
+              <h1 class="slide-title">🔧 Configuration finale</h1>
+              <div class="step-item">
+                  <div class="step-number">4</div>
+                  <div class="step-content">
+                      <h3>Configuration finale</h3>
+                      <p>Glisser les champs vers les zones appropriées et personnaliser l'affichage</p>
+                  </div>
+              </div>
+              
+                  <div class="content-card" style="margin-top: 30px;">
+                      <h3 style="color: #1E40AF; margin-bottom: 16px;">💡 Points clés à retenir</h3>
+                      <ul style="list-style: none; padding: 0;">
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Suivez chaque étape dans l'ordre</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ Vérifiez le résultat à chaque action</li>
+                          <li style="margin-bottom: 8px; color: #1F2937;">▶ N'hésitez pas à répéter si nécessaire</li>
+                      </ul>
+                  </div>
+              
+          </div>
+          <div class="slide-footer">
+              <span>EduPro AI • Formation demonstrative</span>
+              <span>Slide 5 / 6</span>
+          </div>
+      </div>
+    
+    <div class="slide" data-slide="5">
+        <div class="slide-content">
+            <h1 class="slide-title">🎉 Formation terminée !</h1>
+            <p class="slide-subtitle">Félicitations ! Vous maîtrisez maintenant Créer un tableau croisé dynamique Excel</p>
+            <div class="content-grid">
+                <div class="content-card">
+                    <h3 style="color: #1E40AF; margin-bottom: 20px;">📚 Prochaines étapes</h3>
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">→</span>
+                            Pratiquer sur vos propres données
+                        </li>
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">→</span>
+                            Explorer les fonctionnalités avancées
+                        </li>
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">→</span>
+                            Partager avec votre équipe
+                        </li>
+                    </ul>
+                </div>
+                <div class="content-card">
+                    <h3 style="color: #1E40AF; margin-bottom: 20px;">🎯 Ressources</h3>
+                    <ul style="list-style: none; padding: 0;">
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">📖</span>
+                            Documentation officielle
+                        </li>
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">👥</span>
+                            Communauté EduPro
+                        </li>
+                        <li style="margin-bottom: 12px; display: flex; align-items: center;">
+                            <span style="color: #3B82F6; margin-right: 12px;">🆘</span>
+                            Support technique
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="slide-footer">
+            <span>Merci ! • EduPro AI</span>
+            <span>Slide 6 / 6</span>
+        </div>
+    </div>
+  
+        
+        <div class="floating-elements">
+            <div class="floating-circle" style="width: 100px; height: 100px; top: 10%; left: 10%; animation-delay: 0s;"></div>
+            <div class="floating-circle" style="width: 60px; height: 60px; top: 70%; right: 15%; animation-delay: 2s;"></div>
+            <div class="floating-circle" style="width: 80px; height: 80px; top: 30%; right: 10%; animation-delay: 4s;"></div>
+        </div>
+    </div>
+    
+    <div class="navigation">
+        <button class="nav-button" id="prevBtn" onclick="previousSlide()">← Précédent</button>
+        <button class="nav-button" id="nextBtn" onclick="nextSlide()">Suivant →</button>
+    </div>
+    
+    <script>
+        let currentSlide = 0;
+        const totalSlides = 6; // +2 pour titre et conclusion
+        
+        function showSlide(index) {
+            document.querySelectorAll('.slide').forEach(slide => slide.classList.remove('active'));
+            document.querySelector(`[data-slide="${index}"]`).classList.add('active');
+            
+            // Mise à jour barre de progression
+            const progress = ((index + 1) / totalSlides) * 100;
+            document.getElementById('progressBar').style.width = progress + '%';
+            
+            // Mise à jour boutons navigation
+            document.getElementById('prevBtn').disabled = index === 0;
+            document.getElementById('nextBtn').disabled = index === totalSlides - 1;
+        }
+        
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                currentSlide++;
+                showSlide(currentSlide);
+            }
+        }
+        
+        function previousSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                showSlide(currentSlide);
+            }
+        }
+        
+        // Navigation clavier
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') nextSlide();
+            if (e.key === 'ArrowLeft') previousSlide();
+            if (e.key === 'Home') { currentSlide = 0; showSlide(currentSlide); }
+            if (e.key === 'End') { currentSlide = totalSlides - 1; showSlide(currentSlide); }
+        });
+        
+        // Initialisation
+        showSlide(0);
+        
+        // Auto-play optionnel (décommenter si besoin)
+        // setInterval(() => { if (currentSlide < totalSlides - 1) nextSlide(); }, 10000);
+    </script>
+</body>
+</html>

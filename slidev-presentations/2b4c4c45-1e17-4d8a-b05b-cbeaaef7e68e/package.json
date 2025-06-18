@@ -1,0 +1,13 @@
+{
+  "name": "edupro-slides-2b4c4c45-1e17-4d8a-b05b-cbeaaef7e68e",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "slidev slides.md",
+    "build": "slidev build slides.md",
+    "export": "slidev export slides.md"
+  },
+  "dependencies": {
+    "@slidev/cli": "^0.48.0",
+    "@slidev/theme-default": "^0.21.0"
+  }
+}
