@@ -775,10 +775,14 @@ router.post('/groq-plan', async (req, res) => {
             planData = createFallbackPlan({ topic, capsuleType, settings });
         }
 
+        // Calcul du temps total
+        const totalTime = Date.now() - startTime;
+
         // Validation durée totale
-        const actualDuration = planData.total_duration_seconds || planData.structure?.introduction?.duration_seconds +
-            planData.structure?.development?.duration_seconds +
-            planData.structure?.synthesis?.duration_seconds;
+        const actualDuration = planData.total_duration_seconds ||
+            (planData.structure?.introduction?.duration_seconds || 0) +
+            (planData.structure?.development?.duration_seconds || 0) +
+            (planData.structure?.synthesis?.duration_seconds || 0);
 
         const result = {
             plan_id: planId,
