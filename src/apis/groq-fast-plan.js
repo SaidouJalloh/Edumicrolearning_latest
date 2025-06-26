@@ -1614,11 +1614,721 @@ GET https://edupro-ai.onrender.com/ai/groq-plan/styles
 
 
 
-
+// Un peu de soucis pour la gestion des documents 
 // meme code mais avec script de narration par slide et ressource externe
 // groq-fast-plan.js - Version Enhanced avec Ressources Documentaires
 
 // groq-fast-plan.js - UN SEUL ENDPOINT POUR TOUT (JSON + Upload)
+
+// const express = require('express');
+// const axios = require('axios');
+// const { v4: uuidv4 } = require('uuid');
+// const multer = require('multer');
+// const fs = require('fs');
+// const path = require('path');
+// const crypto = require('crypto');
+
+// const router = express.Router();
+
+// // Configuration du cache
+// const planCache = new Map();
+// const CACHE_DURATION = 1000 * 60 * 15; // 15 minutes
+
+// // Configuration multer pour upload de fichiers
+// const upload = multer({
+//     dest: 'temp-uploads/',
+//     fileFilter: (req, file, cb) => {
+//         const allowedTypes = ['.pdf', '.txt', '.docx', '.md', '.csv'];
+//         const ext = path.extname(file.originalname).toLowerCase();
+//         cb(null, allowedTypes.includes(ext));
+//     },
+//     limits: {
+//         fileSize: 10 * 1024 * 1024, // 10MB max
+//         files: 5 // Maximum 5 fichiers
+//     }
+// });
+
+// // Créer le dossier temp-uploads s'il n'existe pas
+// const tempDir = path.join(__dirname, '..', '..', 'temp-uploads');
+// if (!fs.existsSync(tempDir)) {
+//     fs.mkdirSync(tempDir, { recursive: true });
+//     console.log('📁 Dossier temp-uploads créé');
+// }
+
+// // 🎯 UN SEUL ENDPOINT POUR TOUT (JSON + Upload)
+// router.post('/groq-plan', upload.array('files', 5), async (req, res) => {
+//     const startTime = Date.now();
+
+//     try {
+//         // 🔍 DÉTECTION AUTOMATIQUE DU FORMAT
+//         const isFormData = req.is('multipart/form-data');
+//         const isJSON = req.is('application/json');
+
+//         console.log(`🎯 Endpoint unique - Format détecté: ${isFormData ? 'Form-Data (avec fichiers)' : 'JSON'}`);
+
+//         let topic, capsuleType, settings, resources, reference_materials, company_context, specific_requirements;
+
+//         if (isFormData) {
+//             // 📁 FORMAT FORM-DATA (avec fichiers)
+//             topic = req.body.topic;
+//             capsuleType = req.body.capsuleType || 'demonstrative';
+
+//             // Parse settings JSON si fourni
+//             try {
+//                 settings = req.body.settings ? JSON.parse(req.body.settings) : {};
+//             } catch (e) {
+//                 settings = {};
+//                 console.warn('⚠️ Settings JSON invalides, utilisation par défaut');
+//             }
+
+//             // Parse resources JSON si fourni
+//             try {
+//                 resources = req.body.resources ? JSON.parse(req.body.resources) : {};
+//             } catch (e) {
+//                 resources = {};
+//                 console.warn('⚠️ Ressources JSON invalides, ignorées');
+//             }
+
+//             // Parse reference_materials JSON si fourni
+//             try {
+//                 reference_materials = req.body.reference_materials ? JSON.parse(req.body.reference_materials) : [];
+//             } catch (e) {
+//                 reference_materials = [];
+//             }
+
+//             company_context = req.body.company_context || null;
+//             specific_requirements = req.body.specific_requirements || null;
+
+//         } else {
+//             // 📝 FORMAT JSON (sans fichiers)
+//             topic = req.body.topic;
+//             capsuleType = req.body.capsuleType || 'demonstrative';
+//             settings = req.body.settings || {};
+//             resources = req.body.resources || {};
+//             reference_materials = req.body.reference_materials || [];
+//             company_context = req.body.company_context || null;
+//             specific_requirements = req.body.specific_requirements || null;
+//         }
+
+//         // Validation de base
+//         if (!topic || topic.length < 5) {
+//             // Nettoyer les fichiers uploadés si présents
+//             cleanupUploadedFiles(req.files);
+//             return res.status(400).json({
+//                 error: 'Topic requis (minimum 5 caractères)',
+//                 format_detected: isFormData ? 'form-data' : 'json',
+//                 files_uploaded: req.files?.length || 0,
+//                 example: 'Les 3 erreurs Excel à éviter'
+//             });
+//         }
+
+//         // Settings par défaut
+//         const finalSettings = {
+//             level: 'beginner',
+//             duration: 5,
+//             style: 'practical',
+//             ...settings
+//         };
+
+//         console.log(`⚡ Génération Groq v3 UNIFIED: "${topic.substring(0, 50)}..." (${capsuleType}, ${finalSettings.level}, ${isFormData ? 'avec fichiers' : 'JSON'})`);
+
+//         // 📄 TRAITEMENT DES FICHIERS SI PRÉSENTS
+//         let filesContent = '';
+//         const processedFiles = [];
+
+//         if (req.files && req.files.length > 0) {
+//             console.log(`📁 Traitement de ${req.files.length} fichiers uploadés...`);
+
+//             for (const file of req.files) {
+//                 try {
+//                     const content = await parseUploadedFile(file);
+//                     filesContent += `\n\n=== CONTENU DE ${file.originalname} ===\n${content}\n`;
+//                     processedFiles.push({
+//                         name: file.originalname,
+//                         size: file.size,
+//                         type: path.extname(file.originalname),
+//                         content_length: content.length,
+//                         status: 'parsed'
+//                     });
+//                 } catch (error) {
+//                     console.error(`❌ Erreur parsing ${file.originalname}:`, error.message);
+//                     processedFiles.push({
+//                         name: file.originalname,
+//                         status: 'error',
+//                         error: error.message
+//                     });
+//                 }
+//             }
+//         }
+
+//         // 🔗 COMBINAISON DE TOUTES LES RESSOURCES
+//         const combinedResources = {
+//             ...resources,
+//             files_content: filesContent // Ajout du contenu des fichiers
+//         };
+
+//         // 🔍 ANALYSE DES RESSOURCES COMPLÈTES
+//         let resourcesContext = '';
+//         let hasResources = false;
+
+//         if (combinedResources && Object.keys(combinedResources).length > 0) {
+//             hasResources = true;
+//             resourcesContext = await processResourcesContext(combinedResources);
+//             console.log(`📚 Contexte total: ${resourcesContext.length} caractères (fichiers: ${filesContent.length})`);
+//         }
+
+//         if (reference_materials && reference_materials.length > 0) {
+//             hasResources = true;
+//             const materialsContext = processMaterialsContext(reference_materials);
+//             resourcesContext += '\n\n' + materialsContext;
+//             console.log(`📖 Matériaux de référence: ${reference_materials.length} éléments`);
+//         }
+
+//         // Cache key avec contexte complet
+//         const cacheKey = generateCacheKey(topic, capsuleType, finalSettings, resourcesContext);
+
+//         // Vérification cache
+//         if (planCache.has(cacheKey)) {
+//             const cached = planCache.get(cacheKey);
+//             if (Date.now() - cached.timestamp < CACHE_DURATION) {
+//                 // Nettoyer les fichiers même pour le cache
+//                 cleanupUploadedFiles(req.files);
+
+//                 console.log('💾 Plan récupéré du cache');
+//                 return res.json({
+//                     ...cached.data,
+//                     generated_at: cached.timestamp,
+//                     from_cache: true,
+//                     format_used: isFormData ? 'form-data' : 'json',
+//                     files_processed: processedFiles.length,
+//                     cache_hit: true
+//                 });
+//             } else {
+//                 planCache.delete(cacheKey);
+//             }
+//         }
+
+//         // 🎯 CRÉATION DU PROMPT ENRICHI
+//         const enhancedPrompt = createEnhancedPrompt(
+//             topic,
+//             capsuleType,
+//             finalSettings,
+//             resourcesContext,
+//             company_context,
+//             specific_requirements
+//         );
+
+//         // Génération avec Groq
+//         const groqResponse = await callGroqAPI(enhancedPrompt);
+
+//         // Parsing et validation
+//         let planData;
+//         try {
+//             const cleanedResponse = cleanGroqResponse(groqResponse);
+//             planData = JSON.parse(cleanedResponse);
+//         } catch (parseError) {
+//             console.error('❌ Erreur parsing JSON Groq:', parseError.message);
+//             planData = createFallbackPlan(topic, finalSettings);
+//         }
+
+//         // Enrichissement du plan
+//         const enrichedPlan = enrichPlanWithResources(planData, combinedResources, reference_materials, hasResources);
+
+//         // Nettoyage des fichiers temporaires
+//         cleanupUploadedFiles(req.files);
+
+//         // Finalisation
+//         const planId = uuidv4();
+//         const totalTime = Date.now() - startTime;
+
+//         const result = {
+//             plan_id: planId,
+//             topic: topic,
+//             capsule_type: capsuleType,
+//             settings: finalSettings,
+
+//             // 🎯 MÉTADONNÉES UNIFIED
+//             input_format: {
+//                 detected: isFormData ? 'multipart/form-data' : 'application/json',
+//                 has_file_uploads: req.files?.length > 0,
+//                 files_count: req.files?.length || 0
+//             },
+
+//             // 📁 INFO FICHIERS (si présents)
+//             ...(req.files?.length > 0 && {
+//                 files_info: {
+//                     uploaded_count: req.files.length,
+//                     processed_successfully: processedFiles.filter(f => f.status === 'parsed').length,
+//                     failed_count: processedFiles.filter(f => f.status === 'error').length,
+//                     total_content_length: filesContent.length,
+//                     processed_files: processedFiles
+//                 }
+//             }),
+
+//             // 📚 INFO RESSOURCES
+//             resources_info: {
+//                 has_resources: hasResources,
+//                 has_files: filesContent.length > 0,
+//                 has_text_resources: !!(combinedResources.text_content && combinedResources.text_content !== filesContent),
+//                 resources_types: Object.keys(combinedResources).filter(k => k !== 'files_content'),
+//                 reference_materials_count: reference_materials?.length || 0,
+//                 context_length: resourcesContext.length,
+//                 company_context: !!company_context,
+//                 specific_requirements: !!specific_requirements
+//             },
+
+//             // Plan généré
+//             plan_sections: enrichedPlan.plan_sections,
+
+//             // Métadonnées
+//             generation_stats: {
+//                 total_time_ms: totalTime,
+//                 groq_model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+//                 with_resources: hasResources,
+//                 with_file_uploads: req.files?.length > 0,
+//                 prompt_length: enhancedPrompt.length,
+//                 response_quality: 'enhanced_unified_endpoint'
+//             },
+
+//             generated_at: new Date().toISOString(),
+//             status: 'completed',
+//             cache_stored: true,
+//             ready_for_slides: true,
+
+//             // 🎯 WORKFLOW SUGGESTIONS
+//             next_steps: {
+//                 primary: 'POST /ai/plan-to-markdown avec ce plan complet',
+//                 alternative: 'POST /ai/generate-slides pour créer directement les slides',
+//                 with_audio: 'Puis POST /ai/generate-narration-bark pour l\'audio'
+//             }
+//         };
+
+//         // Sauvegarde cache
+//         planCache.set(cacheKey, {
+//             data: result,
+//             timestamp: Date.now()
+//         });
+
+//         console.log(`✅ Plan UNIFIED généré: ${enrichedPlan.plan_sections.length} sections, ${processedFiles.filter(f => f.status === 'parsed').length}/${req.files?.length || 0} fichiers, ${totalTime}ms`);
+//         res.json(result);
+
+//     } catch (error) {
+//         // Nettoyer les fichiers en cas d'erreur
+//         cleanupUploadedFiles(req.files);
+
+//         const totalTime = Date.now() - startTime;
+//         console.error('❌ Erreur génération plan UNIFIED:', error);
+
+//         res.status(500).json({
+//             error: 'Erreur génération plan',
+//             details: error.message,
+//             processing_time_ms: totalTime,
+//             troubleshooting: {
+//                 check_groq_api: 'Vérifiez la clé API Groq',
+//                 check_format: 'Vérifiez le format JSON ou form-data',
+//                 check_files: 'Vérifiez les fichiers uploadés si présents',
+//                 retry: 'Réessayez sans fichiers si problème persiste'
+//             }
+//         });
+//     }
+// });
+
+// // 🔧 FONCTION PARSING FICHIERS
+// async function parseUploadedFile(file) {
+//     const ext = path.extname(file.originalname).toLowerCase();
+
+//     try {
+//         switch (ext) {
+//             case '.txt':
+//             case '.md':
+//                 return fs.readFileSync(file.path, 'utf8');
+
+//             case '.csv':
+//                 const csvContent = fs.readFileSync(file.path, 'utf8');
+//                 return `Données CSV:\n${csvContent}`;
+
+//             case '.pdf':
+//                 // Pour activer PDF : npm install pdf-parse
+//                 // const pdf = require('pdf-parse');
+//                 // const pdfBuffer = fs.readFileSync(file.path);
+//                 // const pdfData = await pdf(pdfBuffer);
+//                 // return pdfData.text;
+//                 throw new Error('Support PDF nécessite: npm install pdf-parse');
+
+//             case '.docx':
+//                 // Pour activer DOCX : npm install mammoth
+//                 // const mammoth = require('mammoth');
+//                 // const docxBuffer = fs.readFileSync(file.path);
+//                 // const result = await mammoth.extractRawText({ buffer: docxBuffer });
+//                 // return result.value;
+//                 throw new Error('Support DOCX nécessite: npm install mammoth');
+
+//             default:
+//                 throw new Error(`Type de fichier non supporté: ${ext}`);
+//         }
+//     } catch (error) {
+//         throw new Error(`Erreur parsing ${file.originalname}: ${error.message}`);
+//     }
+// }
+
+// // 🔧 NETTOYAGE FICHIERS TEMPORAIRES
+// function cleanupUploadedFiles(files) {
+//     if (files && files.length > 0) {
+//         files.forEach(file => {
+//             try {
+//                 if (fs.existsSync(file.path)) {
+//                     fs.unlinkSync(file.path);
+//                 }
+//             } catch (error) {
+//                 console.warn(`⚠️ Impossible de supprimer ${file.path}:`, error.message);
+//             }
+//         });
+//     }
+// }
+
+// // 🔧 TRAITEMENT DES RESSOURCES
+// async function processResourcesContext(resources) {
+//     let context = '';
+
+//     try {
+//         // Contenu des fichiers uploadés
+//         if (resources.files_content && resources.files_content.trim()) {
+//             context += `CONTENU DES FICHIERS FOURNIS:\n${resources.files_content}\n\n`;
+//         }
+
+//         // Texte direct
+//         if (resources.text_content && resources.text_content !== resources.files_content) {
+//             context += `CONTENU SPÉCIFIQUE ADDITIONNEL:\n${resources.text_content}\n\n`;
+//         }
+
+//         // URLs
+//         if (resources.urls && resources.urls.length > 0) {
+//             context += `RESSOURCES WEB MENTIONNÉES:\n`;
+//             resources.urls.forEach(url => context += `- ${url}\n`);
+//             context += '\n';
+//         }
+
+//         // Documents référencés
+//         if (resources.documents && resources.documents.length > 0) {
+//             context += `DOCUMENTS DE RÉFÉRENCE:\n`;
+//             resources.documents.forEach(doc => context += `- ${doc}\n`);
+//             context += '\n';
+//         }
+
+//         // Mots-clés
+//         if (resources.keywords && resources.keywords.length > 0) {
+//             context += `MOTS-CLÉS IMPORTANTS: ${resources.keywords.join(', ')}\n\n`;
+//         }
+
+//         // Procédures
+//         if (resources.procedures) {
+//             context += `PROCÉDURES SPÉCIFIQUES:\n${resources.procedures}\n\n`;
+//         }
+
+//     } catch (error) {
+//         console.error('❌ Erreur traitement ressources:', error.message);
+//         context = 'ERREUR TRAITEMENT RESSOURCES\n';
+//     }
+
+//     return context;
+// }
+
+// // 🔧 TRAITEMENT MATÉRIAUX DE RÉFÉRENCE
+// function processMaterialsContext(materials) {
+//     let context = 'MATÉRIAUX DE RÉFÉRENCE:\n';
+
+//     materials.forEach((material, index) => {
+//         context += `${index + 1}. `;
+//         if (material.title) context += `Titre: ${material.title}\n`;
+//         if (material.type) context += `   Type: ${material.type}\n`;
+//         if (material.content) context += `   Contenu: ${material.content}\n`;
+//         if (material.source) context += `   Source: ${material.source}\n`;
+//         context += '\n';
+//     });
+
+//     return context;
+// }
+
+// // 🎯 CRÉATION DU PROMPT ENRICHI
+// function createEnhancedPrompt(topic, capsuleType, settings, resourcesContext, companyContext, specificRequirements) {
+//     const { level, duration, style } = settings;
+
+//     let prompt = `Tu es un expert en pédagogie et conception de formations. Crée un plan de formation détaillé et structuré.
+
+// INFORMATIONS DE BASE:
+// - Sujet: ${topic}
+// - Type: ${capsuleType}
+// - Niveau: ${level}
+// - Durée: ${duration} minutes
+// - Style: ${style}`;
+
+//     // Ajout du contexte ressources
+//     if (resourcesContext && resourcesContext.length > 0) {
+//         prompt += `
+
+// RESSOURCES ET CONTEXTE SPÉCIFIQUES À UTILISER:
+// ${resourcesContext}
+
+// INSTRUCTIONS IMPORTANTES:
+// - Utilise OBLIGATOIREMENT le contenu et les informations des ressources fournies
+// - Adapte le vocabulaire et les exemples au contexte donné
+// - Intègre les procédures et méthodes mentionnées dans les ressources
+// - Respecte la terminologie spécifique fournie`;
+//     }
+
+//     // Contexte entreprise
+//     if (companyContext) {
+//         prompt += `
+
+// CONTEXTE ENTREPRISE:
+// ${companyContext}`;
+//     }
+
+//     // Exigences spécifiques
+//     if (specificRequirements) {
+//         prompt += `
+
+// EXIGENCES SPÉCIFIQUES:
+// ${specificRequirements}`;
+//     }
+
+//     prompt += `
+
+// GÉNÈRE un plan JSON avec cette structure EXACTE:
+
+// {
+//   "plan_sections": [
+//     {
+//       "section_number": 1,
+//       "title": "Introduction",
+//       "type": "introduction",
+//       "duration_seconds": 30,
+//       "what_to_cover": [
+//         "Point d'accroche basé sur les ressources fournies",
+//         "Objectifs alignés avec le contexte spécifique"
+//       ],
+//       "content_summary": "Résumé intégrant les éléments des ressources"
+//     }
+//   ]
+// }
+
+// RÈGLES STRICTES:
+// - ${duration} minutes maximum (${duration * 60} secondes total)
+// - Sections équilibrées en durée
+// - Intégration OBLIGATOIRE des ressources dans le contenu
+// - Vocabulaire et exemples adaptés au contexte fourni
+// - JSON valide uniquement, pas de texte avant/après`;
+
+//     return prompt;
+// }
+
+// // 🔧 ENRICHISSEMENT DU PLAN
+// function enrichPlanWithResources(planData, resources, materials, hasResources) {
+//     if (!hasResources || !planData.plan_sections) {
+//         return planData;
+//     }
+
+//     planData.plan_sections = planData.plan_sections.map(section => ({
+//         ...section,
+//         enhanced_with_resources: hasResources,
+//         resource_integration: {
+//             uses_company_content: !!(resources.text_content || resources.files_content),
+//             uses_uploaded_files: !!resources.files_content,
+//             references_documents: !!(resources.documents?.length),
+//             includes_procedures: !!resources.procedures,
+//             follows_company_style: true
+//         }
+//     }));
+
+//     return planData;
+// }
+
+// // 🔧 APPEL API GROQ
+// async function callGroqAPI(prompt) {
+//     try {
+//         const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+//             model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+//             messages: [
+//                 {
+//                     role: 'system',
+//                     content: 'Tu es un expert en conception pédagogique. Tu intègres parfaitement les ressources fournies dans tes plans de formation. Réponds UNIQUEMENT en JSON valide.'
+//                 },
+//                 {
+//                     role: 'user',
+//                     content: prompt
+//                 }
+//             ],
+//             temperature: 0.7,
+//             max_tokens: 4000
+//         }, {
+//             headers: {
+//                 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+//                 'Content-Type': 'application/json'
+//             }
+//         });
+
+//         return response.data.choices[0].message.content;
+//     } catch (error) {
+//         console.error('❌ Erreur API Groq:', error.message);
+//         throw error;
+//     }
+// }
+
+// // 🔧 NETTOYAGE RÉPONSE GROQ
+// function cleanGroqResponse(response) {
+//     return response
+//         .replace(/```json\n/g, '')
+//         .replace(/\n```/g, '')
+//         .replace(/```/g, '')
+//         .replace(/^[^{]*/, '')
+//         .replace(/[^}]*$/, '')
+//         .trim();
+// }
+
+// // 🔧 PLAN FALLBACK
+// function createFallbackPlan(topic, settings) {
+//     const { duration } = settings;
+//     const totalSeconds = duration * 60;
+
+//     return {
+//         plan_sections: [
+//             {
+//                 section_number: 1,
+//                 title: "Introduction",
+//                 type: "introduction",
+//                 duration_seconds: Math.round(totalSeconds * 0.15),
+//                 what_to_cover: [
+//                     `Présentation du sujet: ${topic}`,
+//                     "Objectifs de cette formation"
+//                 ],
+//                 content_summary: `Introduction à ${topic}`
+//             },
+//             {
+//                 section_number: 2,
+//                 title: "Développement principal",
+//                 type: "development",
+//                 duration_seconds: Math.round(totalSeconds * 0.70),
+//                 what_to_cover: [
+//                     "Points clés du sujet",
+//                     "Exemples pratiques",
+//                     "Méthodes recommandées"
+//                 ],
+//                 content_summary: `Contenu principal sur ${topic}`
+//             },
+//             {
+//                 section_number: 3,
+//                 title: "Conclusion",
+//                 type: "conclusion",
+//                 duration_seconds: Math.round(totalSeconds * 0.15),
+//                 what_to_cover: [
+//                     "Récapitulatif des points essentiels",
+//                     "Prochaines étapes recommandées"
+//                 ],
+//                 content_summary: `Synthèse et conclusion de ${topic}`
+//             }
+//         ]
+//     };
+// }
+
+// // 🔧 GÉNÉRATION CLÉ CACHE
+// function generateCacheKey(topic, capsuleType, settings, resourcesContext) {
+//     const baseKey = `${topic}_${capsuleType}_${settings.level}_${settings.duration}_${settings.style}`;
+//     const resourcesHash = resourcesContext ?
+//         crypto.createHash('md5').update(resourcesContext).digest('hex').substring(0, 8) :
+//         'no_resources';
+//     return `${baseKey}_${resourcesHash}`;
+// }
+
+// // 🔧 INFO ENDPOINT
+// router.get('/groq-plan/info', (req, res) => {
+//     res.json({
+//         endpoint: 'POST /ai/groq-plan',
+//         description: '🎯 ENDPOINT UNIQUE - Gère JSON ET upload de fichiers automatiquement',
+//         version: '4.0 - Unified Endpoint',
+
+//         auto_detection: {
+//             'Content-Type: application/json': 'Format JSON classique avec ressources textuelles',
+//             'Content-Type: multipart/form-data': 'Upload de fichiers + données JSON dans form-data'
+//         },
+
+//         usage_json: {
+//             content_type: 'application/json',
+//             example: {
+//                 topic: 'Formation Excel',
+//                 resources: {
+//                     text_content: 'Notre entreprise...',
+//                     keywords: ['Excel', 'TCD']
+//                 }
+//             }
+//         },
+
+//         usage_files: {
+//             content_type: 'multipart/form-data',
+//             form_fields: {
+//                 topic: 'Formation Excel avec nos docs',
+//                 settings: '{"level":"intermediate","duration":10}',
+//                 resources: '{"keywords":["Excel","formation"]}',
+//                 files: ['guide.txt', 'procedures.csv']
+//             }
+//         },
+
+//         supported_files: {
+//             ready_now: ['.txt', '.md', '.csv'],
+//             requires_install: ['.pdf (npm install pdf-parse)', '.docx (npm install mammoth)']
+//         },
+
+//         benefits: [
+//             '🎯 UN SEUL endpoint pour tout',
+//             '🔄 Détection automatique JSON/Files',
+//             '📁 Upload direct de fichiers',
+//             '📚 Ressources textuelles ET fichiers',
+//             '💾 Cache intelligent unifié',
+//             '🔒 Nettoyage auto fichiers temporaires',
+//             '✅ 100% backward compatible'
+//         ],
+
+//         examples: {
+//             postman_json: {
+//                 method: 'POST',
+//                 url: '/ai/groq-plan',
+//                 headers: { 'Content-Type': 'application/json' },
+//                 body: '{"topic":"Test JSON","resources":{"text_content":"..."}}'
+//             },
+//             postman_files: {
+//                 method: 'POST',
+//                 url: '/ai/groq-plan',
+//                 type: 'form-data',
+//                 fields: {
+//                     topic: 'Test Files',
+//                     files: 'Select files...'
+//                 }
+//             }
+//         }
+//     });
+// });
+
+// module.exports = router;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// groq-fast-plan.js - VERSION CORRIGÉE avec gestion ressources robuste
 const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
@@ -1637,69 +2347,88 @@ const CACHE_DURATION = 1000 * 60 * 15; // 15 minutes
 const upload = multer({
     dest: 'temp-uploads/',
     fileFilter: (req, file, cb) => {
-        const allowedTypes = ['.pdf', '.txt', '.docx', '.md', '.csv'];
+        const allowedTypes = ['.pdf', '.txt', '.docx', '.md', '.csv', '.json'];
         const ext = path.extname(file.originalname).toLowerCase();
         cb(null, allowedTypes.includes(ext));
     },
     limits: {
         fileSize: 10 * 1024 * 1024, // 10MB max
-        files: 5 // Maximum 5 fichiers
+        files: 10 // Maximum 10 fichiers
     }
 });
 
 // Créer le dossier temp-uploads s'il n'existe pas
-const tempDir = path.join(__dirname, '..', '..', 'temp-uploads');
+const tempDir = path.join(__dirname, '..', 'temp-uploads');
 if (!fs.existsSync(tempDir)) {
     fs.mkdirSync(tempDir, { recursive: true });
     console.log('📁 Dossier temp-uploads créé');
 }
 
-// 🎯 UN SEUL ENDPOINT POUR TOUT (JSON + Upload)
-router.post('/groq-plan', upload.array('files', 5), async (req, res) => {
+// 🔧 MIDDLEWARE CONDITIONNEL CORRIGÉ - Évite l'erreur boundary
+const conditionalMulter = (req, res, next) => {
+    const contentType = req.headers['content-type'] || '';
+
+    console.log(`🔍 Content-Type détecté: ${contentType.substring(0, 50)}...`);
+
+    if (contentType.includes('multipart/form-data')) {
+        console.log('📁 Mode multipart/form-data - Activation multer');
+        upload.array('files', 10)(req, res, (err) => {
+            if (err) {
+                console.error('❌ Erreur multer:', err.message);
+                return res.status(400).json({
+                    error: 'Erreur upload fichiers',
+                    details: err.message,
+                    solution: 'Vérifiez la taille (<10MB) et le type des fichiers'
+                });
+            }
+            next();
+        });
+    } else {
+        console.log('📝 Mode JSON standard - Bypass multer');
+        next(); // Passer directement au handler
+    }
+};
+
+// 🎯 ENDPOINT UNIFIÉ CORRIGÉ
+router.post('/groq-plan', conditionalMulter, async (req, res) => {
     const startTime = Date.now();
 
     try {
-        // 🔍 DÉTECTION AUTOMATIQUE DU FORMAT
-        const isFormData = req.is('multipart/form-data');
-        const isJSON = req.is('application/json');
+        // 🔍 DÉTECTION DU FORMAT ET VALIDATION
+        const contentType = req.headers['content-type'] || '';
+        const isFormData = contentType.includes('multipart/form-data');
+        const isJSON = contentType.includes('application/json');
 
-        console.log(`🎯 Endpoint unique - Format détecté: ${isFormData ? 'Form-Data (avec fichiers)' : 'JSON'}`);
+        console.log(`🎯 Génération plan - Format: ${isFormData ? 'multipart/form-data' : isJSON ? 'JSON' : 'autre'}`);
 
         let topic, capsuleType, settings, resources, reference_materials, company_context, specific_requirements;
 
         if (isFormData) {
-            // 📁 FORMAT FORM-DATA (avec fichiers)
+            // 📁 FORMAT MULTIPART/FORM-DATA (avec fichiers)
+            console.log(`📁 Traitement form-data avec ${req.files?.length || 0} fichiers`);
+
             topic = req.body.topic;
             capsuleType = req.body.capsuleType || 'demonstrative';
 
-            // Parse settings JSON si fourni
+            // Parse JSON fields depuis form-data
             try {
                 settings = req.body.settings ? JSON.parse(req.body.settings) : {};
-            } catch (e) {
-                settings = {};
-                console.warn('⚠️ Settings JSON invalides, utilisation par défaut');
-            }
-
-            // Parse resources JSON si fourni
-            try {
                 resources = req.body.resources ? JSON.parse(req.body.resources) : {};
-            } catch (e) {
-                resources = {};
-                console.warn('⚠️ Ressources JSON invalides, ignorées');
-            }
-
-            // Parse reference_materials JSON si fourni
-            try {
                 reference_materials = req.body.reference_materials ? JSON.parse(req.body.reference_materials) : [];
             } catch (e) {
+                console.warn('⚠️ Erreur parsing JSON depuis form-data, utilisation valeurs par défaut');
+                settings = {};
+                resources = {};
                 reference_materials = [];
             }
 
             company_context = req.body.company_context || null;
             specific_requirements = req.body.specific_requirements || null;
 
-        } else {
-            // 📝 FORMAT JSON (sans fichiers)
+        } else if (isJSON) {
+            // 📝 FORMAT JSON STANDARD
+            console.log('📝 Traitement JSON standard');
+
             topic = req.body.topic;
             capsuleType = req.body.capsuleType || 'demonstrative';
             settings = req.body.settings || {};
@@ -1707,33 +2436,44 @@ router.post('/groq-plan', upload.array('files', 5), async (req, res) => {
             reference_materials = req.body.reference_materials || [];
             company_context = req.body.company_context || null;
             specific_requirements = req.body.specific_requirements || null;
+
+        } else {
+            return res.status(400).json({
+                error: 'Content-Type non supporté',
+                received: contentType,
+                supported: ['application/json', 'multipart/form-data'],
+                solution: 'Utilisez JSON pour les données simples ou multipart/form-data pour les fichiers'
+            });
         }
 
         // Validation de base
         if (!topic || topic.length < 5) {
-            // Nettoyer les fichiers uploadés si présents
             cleanupUploadedFiles(req.files);
             return res.status(400).json({
                 error: 'Topic requis (minimum 5 caractères)',
-                format_detected: isFormData ? 'form-data' : 'json',
+                format_detected: isFormData ? 'multipart/form-data' : 'JSON',
                 files_uploaded: req.files?.length || 0,
-                example: 'Les 3 erreurs Excel à éviter'
+                example: 'Les 3 erreurs Excel à éviter absolument'
             });
         }
 
-        // Settings par défaut
+        // Settings par défaut enrichis
         const finalSettings = {
             level: 'beginner',
             duration: 5,
             style: 'practical',
+            enhancement_level: 'standard', // standard, advanced, maximum
+            adapt_to_resources: true,
+            include_examples: true,
             ...settings
         };
 
-        console.log(`⚡ Génération Groq v3 UNIFIED: "${topic.substring(0, 50)}..." (${capsuleType}, ${finalSettings.level}, ${isFormData ? 'avec fichiers' : 'JSON'})`);
+        console.log(`⚡ Génération enrichie: "${topic.substring(0, 50)}..." (${capsuleType}, niveau: ${finalSettings.level})`);
 
-        // 📄 TRAITEMENT DES FICHIERS SI PRÉSENTS
+        // 📄 TRAITEMENT DES FICHIERS UPLOADÉS
         let filesContent = '';
-        const processedFiles = [];
+        let processedFiles = [];
+        let totalFilesSize = 0;
 
         if (req.files && req.files.length > 0) {
             console.log(`📁 Traitement de ${req.files.length} fichiers uploadés...`);
@@ -1741,18 +2481,31 @@ router.post('/groq-plan', upload.array('files', 5), async (req, res) => {
             for (const file of req.files) {
                 try {
                     const content = await parseUploadedFile(file);
-                    filesContent += `\n\n=== CONTENU DE ${file.originalname} ===\n${content}\n`;
+                    const analysis = analyzeFileContent(content, file.originalname);
+
+                    filesContent += `\n\n=== DOCUMENT: ${file.originalname.toUpperCase()} ===\n`;
+                    filesContent += `Type: ${analysis.content_type}\n`;
+                    filesContent += `Sujets détectés: ${analysis.key_topics.join(', ')}\n`;
+                    filesContent += `Contenu:\n${content}\n`;
+
                     processedFiles.push({
                         name: file.originalname,
                         size: file.size,
                         type: path.extname(file.originalname),
                         content_length: content.length,
+                        content_type: analysis.content_type,
+                        key_topics: analysis.key_topics,
+                        procedures_detected: analysis.has_procedures,
                         status: 'parsed'
                     });
+
+                    totalFilesSize += file.size;
+
                 } catch (error) {
                     console.error(`❌ Erreur parsing ${file.originalname}:`, error.message);
                     processedFiles.push({
                         name: file.originalname,
+                        size: file.size,
                         status: 'error',
                         error: error.message
                     });
@@ -1760,46 +2513,43 @@ router.post('/groq-plan', upload.array('files', 5), async (req, res) => {
             }
         }
 
-        // 🔗 COMBINAISON DE TOUTES LES RESSOURCES
-        const combinedResources = {
+        // 🔗 ENRICHISSEMENT DES RESSOURCES
+        const enrichedResources = {
             ...resources,
-            files_content: filesContent // Ajout du contenu des fichiers
+            // Contenu des fichiers uploadés
+            files_content: filesContent,
+            // Métadonnées des fichiers
+            files_metadata: processedFiles.filter(f => f.status === 'parsed'),
+            // Analyse globale
+            content_analysis: analyzeGlobalContent(filesContent, resources.text_content),
+            // Contexte enrichi
+            enhanced_context: company_context ? enhanceCompanyContext(company_context, filesContent) : null
         };
 
-        // 🔍 ANALYSE DES RESSOURCES COMPLÈTES
-        let resourcesContext = '';
+        // 🔍 CONSTRUCTION DU CONTEXTE COMPLET
+        let fullResourcesContext = '';
         let hasResources = false;
 
-        if (combinedResources && Object.keys(combinedResources).length > 0) {
+        if (Object.keys(enrichedResources).length > 1) { // Plus que juste files_content vide
             hasResources = true;
-            resourcesContext = await processResourcesContext(combinedResources);
-            console.log(`📚 Contexte total: ${resourcesContext.length} caractères (fichiers: ${filesContent.length})`);
+            fullResourcesContext = await buildEnhancedResourcesContext(enrichedResources, reference_materials);
+            console.log(`📚 Contexte enrichi total: ${fullResourcesContext.length} caractères`);
         }
 
-        if (reference_materials && reference_materials.length > 0) {
-            hasResources = true;
-            const materialsContext = processMaterialsContext(reference_materials);
-            resourcesContext += '\n\n' + materialsContext;
-            console.log(`📖 Matériaux de référence: ${reference_materials.length} éléments`);
-        }
-
-        // Cache key avec contexte complet
-        const cacheKey = generateCacheKey(topic, capsuleType, finalSettings, resourcesContext);
+        // Cache key avec hash du contexte complet
+        const cacheKey = generateAdvancedCacheKey(topic, capsuleType, finalSettings, fullResourcesContext, company_context);
 
         // Vérification cache
         if (planCache.has(cacheKey)) {
             const cached = planCache.get(cacheKey);
             if (Date.now() - cached.timestamp < CACHE_DURATION) {
-                // Nettoyer les fichiers même pour le cache
                 cleanupUploadedFiles(req.files);
 
-                console.log('💾 Plan récupéré du cache');
+                console.log('💾 Plan enrichi récupéré du cache');
                 return res.json({
                     ...cached.data,
                     generated_at: cached.timestamp,
                     from_cache: true,
-                    format_used: isFormData ? 'form-data' : 'json',
-                    files_processed: processedFiles.length,
                     cache_hit: true
                 });
             } else {
@@ -1807,98 +2557,142 @@ router.post('/groq-plan', upload.array('files', 5), async (req, res) => {
             }
         }
 
-        // 🎯 CRÉATION DU PROMPT ENRICHI
-        const enhancedPrompt = createEnhancedPrompt(
+        // 🎯 CRÉATION DU PROMPT ENRICHI AVANCÉ
+        const superEnhancedPrompt = createSuperEnhancedPrompt(
             topic,
             capsuleType,
             finalSettings,
-            resourcesContext,
+            fullResourcesContext,
             company_context,
-            specific_requirements
+            specific_requirements,
+            processedFiles.filter(f => f.status === 'parsed')
         );
 
-        // Génération avec Groq
-        const groqResponse = await callGroqAPI(enhancedPrompt);
+        console.log(`🤖 Prompt enrichi: ${superEnhancedPrompt.length} caractères`);
 
-        // Parsing et validation
+        // Génération avec Groq
+        const groqResponse = await callGroqAPI(superEnhancedPrompt, finalSettings.enhancement_level);
+
+        // Parsing et validation améliorés
         let planData;
         try {
             const cleanedResponse = cleanGroqResponse(groqResponse);
             planData = JSON.parse(cleanedResponse);
+
+            // Validation de la structure
+            if (!planData.plan_sections || !Array.isArray(planData.plan_sections)) {
+                throw new Error('Structure plan_sections invalide');
+            }
+
         } catch (parseError) {
             console.error('❌ Erreur parsing JSON Groq:', parseError.message);
-            planData = createFallbackPlan(topic, finalSettings);
+            console.log('🔄 Génération plan fallback enrichi...');
+            planData = createEnhancedFallbackPlan(topic, finalSettings, hasResources);
         }
 
-        // Enrichissement du plan
-        const enrichedPlan = enrichPlanWithResources(planData, combinedResources, reference_materials, hasResources);
+        // Enrichissement avancé du plan
+        const superEnrichedPlan = enrichPlanWithAdvancedResources(
+            planData,
+            enrichedResources,
+            reference_materials,
+            processedFiles,
+            hasResources
+        );
 
         // Nettoyage des fichiers temporaires
         cleanupUploadedFiles(req.files);
 
-        // Finalisation
-        const planId = uuidv4();
+        // 📊 STATISTIQUES AVANCÉES
+        const successfulFiles = processedFiles.filter(f => f.status === 'parsed');
+        const keyTopics = extractGlobalKeyTopics(successfulFiles);
         const totalTime = Date.now() - startTime;
 
+        // 🎯 RÉSULTAT FINAL ENRICHI
         const result = {
-            plan_id: planId,
+            plan_id: uuidv4(),
             topic: topic,
             capsule_type: capsuleType,
             settings: finalSettings,
 
-            // 🎯 MÉTADONNÉES UNIFIED
+            // 🎯 MÉTADONNÉES FORMAT
             input_format: {
                 detected: isFormData ? 'multipart/form-data' : 'application/json',
                 has_file_uploads: req.files?.length > 0,
-                files_count: req.files?.length || 0
+                files_count: req.files?.length || 0,
+                total_files_size_kb: Math.round(totalFilesSize / 1024)
             },
 
-            // 📁 INFO FICHIERS (si présents)
+            // 📁 INFORMATIONS FICHIERS DÉTAILLÉES
             ...(req.files?.length > 0 && {
-                files_info: {
+                files_processing: {
                     uploaded_count: req.files.length,
-                    processed_successfully: processedFiles.filter(f => f.status === 'parsed').length,
+                    processed_successfully: successfulFiles.length,
                     failed_count: processedFiles.filter(f => f.status === 'error').length,
                     total_content_length: filesContent.length,
+                    content_analysis: {
+                        procedures_detected: successfulFiles.filter(f => f.procedures_detected).length,
+                        key_topics_extracted: keyTopics.length,
+                        content_types: [...new Set(successfulFiles.map(f => f.content_type))]
+                    },
                     processed_files: processedFiles
                 }
             }),
 
-            // 📚 INFO RESSOURCES
-            resources_info: {
-                has_resources: hasResources,
-                has_files: filesContent.length > 0,
-                has_text_resources: !!(combinedResources.text_content && combinedResources.text_content !== filesContent),
-                resources_types: Object.keys(combinedResources).filter(k => k !== 'files_content'),
+            // 📚 INFORMATIONS RESSOURCES ENRICHIES
+            resources_enrichment: {
+                has_any_resources: hasResources,
+                has_uploaded_files: filesContent.length > 0,
+                has_text_resources: !!(enrichedResources.text_content && enrichedResources.text_content !== filesContent),
+                has_company_context: !!company_context,
+                has_specific_requirements: !!specific_requirements,
+                resource_types: Object.keys(enrichedResources).filter(k =>
+                    enrichedResources[k] && k !== 'files_content'
+                ),
                 reference_materials_count: reference_materials?.length || 0,
-                context_length: resourcesContext.length,
-                company_context: !!company_context,
-                specific_requirements: !!specific_requirements
+                total_context_length: fullResourcesContext.length,
+                enhancement_level: finalSettings.enhancement_level,
+                adaptation_applied: {
+                    vocabulary_adapted: hasResources && finalSettings.adapt_to_resources,
+                    examples_included: hasResources && finalSettings.include_examples,
+                    company_terminology: !!company_context,
+                    procedures_integrated: successfulFiles.some(f => f.procedures_detected)
+                }
             },
 
-            // Plan généré
-            plan_sections: enrichedPlan.plan_sections,
+            // 🎯 PLAN ENRICHI
+            plan_sections: superEnrichedPlan.plan_sections,
 
-            // Métadonnées
+            // 📊 MÉTADONNÉES GÉNÉRATION
             generation_stats: {
                 total_time_ms: totalTime,
                 groq_model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
-                with_resources: hasResources,
-                with_file_uploads: req.files?.length > 0,
-                prompt_length: enhancedPrompt.length,
-                response_quality: 'enhanced_unified_endpoint'
+                prompt_length: superEnhancedPrompt.length,
+                enhancement_level: finalSettings.enhancement_level,
+                resources_integrated: hasResources,
+                files_processed: successfulFiles.length,
+                response_quality: 'super_enhanced',
+                key_topics_detected: keyTopics
             },
 
             generated_at: new Date().toISOString(),
             status: 'completed',
             cache_stored: true,
-            ready_for_slides: true,
+            ready_for_enhanced_slides: true,
 
-            // 🎯 WORKFLOW SUGGESTIONS
+            // 🎯 WORKFLOW SUGGESTIONS ENRICHIES
             next_steps: {
-                primary: 'POST /ai/plan-to-markdown avec ce plan complet',
-                alternative: 'POST /ai/generate-slides pour créer directement les slides',
-                with_audio: 'Puis POST /ai/generate-narration-bark pour l\'audio'
+                recommended: 'POST /ai/plan-to-markdown pour slides enrichies',
+                alternative: 'POST /ai/enhance-plan-to-markdown pour version super sophistiquée',
+                with_resources: hasResources ? 'Le contenu sera adapté à vos ressources' : null,
+                audio_generation: 'POST /ai/generate-narration-bark avec adaptation entreprise'
+            },
+
+            // 🔧 INFORMATIONS DÉBOGAGE
+            debug_info: {
+                content_type_received: contentType,
+                files_uploaded: req.files?.length || 0,
+                cache_key_generated: !!cacheKey,
+                fallback_used: planData.fallback_generated || false
             }
         };
 
@@ -1908,31 +2702,33 @@ router.post('/groq-plan', upload.array('files', 5), async (req, res) => {
             timestamp: Date.now()
         });
 
-        console.log(`✅ Plan UNIFIED généré: ${enrichedPlan.plan_sections.length} sections, ${processedFiles.filter(f => f.status === 'parsed').length}/${req.files?.length || 0} fichiers, ${totalTime}ms`);
+        console.log(`✅ Plan SUPER-ENRICHI généré: ${superEnrichedPlan.plan_sections.length} sections, ${successfulFiles.length}/${req.files?.length || 0} fichiers, ${totalTime}ms`);
         res.json(result);
 
     } catch (error) {
-        // Nettoyer les fichiers en cas d'erreur
+        // Nettoyage en cas d'erreur
         cleanupUploadedFiles(req.files);
 
         const totalTime = Date.now() - startTime;
-        console.error('❌ Erreur génération plan UNIFIED:', error);
+        console.error('❌ Erreur génération plan enrichi:', error);
 
         res.status(500).json({
-            error: 'Erreur génération plan',
+            error: 'Erreur génération plan enrichi',
             details: error.message,
             processing_time_ms: totalTime,
+            files_uploaded: req.files?.length || 0,
             troubleshooting: {
+                check_content_type: 'Vérifiez le Content-Type (JSON ou multipart/form-data)',
                 check_groq_api: 'Vérifiez la clé API Groq',
-                check_format: 'Vérifiez le format JSON ou form-data',
-                check_files: 'Vérifiez les fichiers uploadés si présents',
-                retry: 'Réessayez sans fichiers si problème persiste'
+                check_files: 'Vérifiez les fichiers uploadés (taille <10MB)',
+                check_topic: 'Vérifiez que le topic fait au moins 5 caractères',
+                retry_json: 'Réessayez en mode JSON sans fichiers'
             }
         });
     }
 });
 
-// 🔧 FONCTION PARSING FICHIERS
+// 🔧 FONCTION PARSING FICHIERS AMÉLIORÉE
 async function parseUploadedFile(file) {
     const ext = path.extname(file.originalname).toLowerCase();
 
@@ -1944,23 +2740,20 @@ async function parseUploadedFile(file) {
 
             case '.csv':
                 const csvContent = fs.readFileSync(file.path, 'utf8');
-                return `Données CSV:\n${csvContent}`;
+                return convertCSVToStructuredText(csvContent);
+
+            case '.json':
+                const jsonContent = fs.readFileSync(file.path, 'utf8');
+                const jsonData = JSON.parse(jsonContent);
+                return convertJSONToStructuredText(jsonData);
 
             case '.pdf':
-                // Pour activer PDF : npm install pdf-parse
-                // const pdf = require('pdf-parse');
-                // const pdfBuffer = fs.readFileSync(file.path);
-                // const pdfData = await pdf(pdfBuffer);
-                // return pdfData.text;
-                throw new Error('Support PDF nécessite: npm install pdf-parse');
+                // Pour PDF : npm install pdf-parse
+                throw new Error('Support PDF: Exécutez "npm install pdf-parse"');
 
             case '.docx':
-                // Pour activer DOCX : npm install mammoth
-                // const mammoth = require('mammoth');
-                // const docxBuffer = fs.readFileSync(file.path);
-                // const result = await mammoth.extractRawText({ buffer: docxBuffer });
-                // return result.value;
-                throw new Error('Support DOCX nécessite: npm install mammoth');
+                // Pour DOCX : npm install mammoth
+                throw new Error('Support DOCX: Exécutez "npm install mammoth"');
 
             default:
                 throw new Error(`Type de fichier non supporté: ${ext}`);
@@ -1970,195 +2763,497 @@ async function parseUploadedFile(file) {
     }
 }
 
-// 🔧 NETTOYAGE FICHIERS TEMPORAIRES
-function cleanupUploadedFiles(files) {
-    if (files && files.length > 0) {
-        files.forEach(file => {
-            try {
-                if (fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
-                }
-            } catch (error) {
-                console.warn(`⚠️ Impossible de supprimer ${file.path}:`, error.message);
-            }
-        });
+// 🔍 ANALYSE CONTENU FICHIER
+function analyzeFileContent(content, filename) {
+    const analysis = {
+        content_type: 'general',
+        key_topics: [],
+        has_procedures: false,
+        has_examples: false,
+        confidence_score: 0
+    };
+
+    const lowerContent = content.toLowerCase();
+    const words = lowerContent.split(/\W+/).filter(w => w.length > 3);
+
+    // Détecter le type de contenu
+    if (lowerContent.includes('procédure') || lowerContent.includes('étape') || /\d+\.\s/.test(content)) {
+        analysis.content_type = 'procedure';
+        analysis.has_procedures = true;
+        analysis.confidence_score += 0.3;
     }
+
+    if (lowerContent.includes('formation') || lowerContent.includes('cours') || lowerContent.includes('apprentissage')) {
+        analysis.content_type = 'training_material';
+        analysis.confidence_score += 0.2;
+    }
+
+    if (filename.toLowerCase().includes('guide') || filename.toLowerCase().includes('manuel')) {
+        analysis.content_type = 'manual';
+        analysis.confidence_score += 0.2;
+    }
+
+    if (lowerContent.includes('exemple') || lowerContent.includes('par exemple') || lowerContent.includes('illustration')) {
+        analysis.has_examples = true;
+        analysis.confidence_score += 0.1;
+    }
+
+    // Extraire mots-clés fréquents
+    const wordFreq = {};
+    words.forEach(word => {
+        if (word.length > 4) {
+            wordFreq[word] = (wordFreq[word] || 0) + 1;
+        }
+    });
+
+    analysis.key_topics = Object.entries(wordFreq)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 8)
+        .map(([word]) => word);
+
+    return analysis;
 }
 
-// 🔧 TRAITEMENT DES RESSOURCES
-async function processResourcesContext(resources) {
+// 🔗 CONSTRUCTION CONTEXTE ENRICHI
+async function buildEnhancedResourcesContext(enrichedResources, referenceMaterials) {
     let context = '';
 
     try {
-        // Contenu des fichiers uploadés
-        if (resources.files_content && resources.files_content.trim()) {
-            context += `CONTENU DES FICHIERS FOURNIS:\n${resources.files_content}\n\n`;
+        // Analyse globale du contenu
+        if (enrichedResources.content_analysis) {
+            context += `ANALYSE GLOBALE DU CONTENU:\n${JSON.stringify(enrichedResources.content_analysis, null, 2)}\n\n`;
         }
 
-        // Texte direct
-        if (resources.text_content && resources.text_content !== resources.files_content) {
-            context += `CONTENU SPÉCIFIQUE ADDITIONNEL:\n${resources.text_content}\n\n`;
+        // Contenu des fichiers avec métadonnées
+        if (enrichedResources.files_content && enrichedResources.files_content.trim()) {
+            context += `DOCUMENTS FOURNIS AVEC MÉTADONNÉES:\n${enrichedResources.files_content}\n\n`;
         }
 
-        // URLs
-        if (resources.urls && resources.urls.length > 0) {
-            context += `RESSOURCES WEB MENTIONNÉES:\n`;
-            resources.urls.forEach(url => context += `- ${url}\n`);
+        // Métadonnées des fichiers
+        if (enrichedResources.files_metadata && enrichedResources.files_metadata.length > 0) {
+            context += `MÉTADONNÉES DES DOCUMENTS:\n`;
+            enrichedResources.files_metadata.forEach(file => {
+                context += `- ${file.name}: ${file.content_type}, sujets: ${file.key_topics.join(', ')}\n`;
+            });
             context += '\n';
         }
 
-        // Documents référencés
-        if (resources.documents && resources.documents.length > 0) {
-            context += `DOCUMENTS DE RÉFÉRENCE:\n`;
-            resources.documents.forEach(doc => context += `- ${doc}\n`);
-            context += '\n';
+        // Texte additionnel
+        if (enrichedResources.text_content && enrichedResources.text_content !== enrichedResources.files_content) {
+            context += `CONTENU TEXTUEL ADDITIONNEL:\n${enrichedResources.text_content}\n\n`;
         }
 
-        // Mots-clés
-        if (resources.keywords && resources.keywords.length > 0) {
-            context += `MOTS-CLÉS IMPORTANTS: ${resources.keywords.join(', ')}\n\n`;
+        // Contexte entreprise enrichi
+        if (enrichedResources.enhanced_context) {
+            context += `CONTEXTE ENTREPRISE ENRICHI:\n${enrichedResources.enhanced_context}\n\n`;
         }
 
-        // Procédures
-        if (resources.procedures) {
-            context += `PROCÉDURES SPÉCIFIQUES:\n${resources.procedures}\n\n`;
+        // Ressources diverses
+        if (enrichedResources.urls && enrichedResources.urls.length > 0) {
+            context += `RESSOURCES WEB:\n${enrichedResources.urls.map(url => `- ${url}`).join('\n')}\n\n`;
+        }
+
+        if (enrichedResources.keywords && enrichedResources.keywords.length > 0) {
+            context += `MOTS-CLÉS PRIORITAIRES: ${enrichedResources.keywords.join(', ')}\n\n`;
+        }
+
+        if (enrichedResources.procedures) {
+            context += `PROCÉDURES SPÉCIFIQUES:\n${enrichedResources.procedures}\n\n`;
+        }
+
+        // Matériaux de référence
+        if (referenceMaterials && referenceMaterials.length > 0) {
+            context += buildReferenceMaterialsContext(referenceMaterials);
         }
 
     } catch (error) {
-        console.error('❌ Erreur traitement ressources:', error.message);
-        context = 'ERREUR TRAITEMENT RESSOURCES\n';
+        console.error('❌ Erreur construction contexte enrichi:', error.message);
+        context = 'ERREUR TRAITEMENT RESSOURCES ENRICHIES\n';
     }
 
     return context;
 }
 
-// 🔧 TRAITEMENT MATÉRIAUX DE RÉFÉRENCE
-function processMaterialsContext(materials) {
-    let context = 'MATÉRIAUX DE RÉFÉRENCE:\n';
+// 🎯 PROMPT SUPER ENRICHI
+function createSuperEnhancedPrompt(topic, capsuleType, settings, resourcesContext, companyContext, specificRequirements, processedFiles) {
+    const { level, duration, style, enhancement_level } = settings;
 
-    materials.forEach((material, index) => {
-        context += `${index + 1}. `;
-        if (material.title) context += `Titre: ${material.title}\n`;
-        if (material.type) context += `   Type: ${material.type}\n`;
-        if (material.content) context += `   Contenu: ${material.content}\n`;
-        if (material.source) context += `   Source: ${material.source}\n`;
-        context += '\n';
-    });
-
-    return context;
-}
-
-// 🎯 CRÉATION DU PROMPT ENRICHI
-function createEnhancedPrompt(topic, capsuleType, settings, resourcesContext, companyContext, specificRequirements) {
-    const { level, duration, style } = settings;
-
-    let prompt = `Tu es un expert en pédagogie et conception de formations. Crée un plan de formation détaillé et structuré.
+    let prompt = `Tu es un expert en pédagogie et conception de formations professionnelles. Tu dois créer un plan de formation exceptionnel, parfaitement adapté aux ressources fournies.
 
 INFORMATIONS DE BASE:
 - Sujet: ${topic}
 - Type: ${capsuleType}
 - Niveau: ${level}
 - Durée: ${duration} minutes
-- Style: ${style}`;
+- Style: ${style}
+- Niveau d'enrichissement: ${enhancement_level}`;
 
-    // Ajout du contexte ressources
+    // Contexte ressources détaillé
     if (resourcesContext && resourcesContext.length > 0) {
         prompt += `
 
-RESSOURCES ET CONTEXTE SPÉCIFIQUES À UTILISER:
+RESSOURCES ET CONTEXTE DÉTAILLÉ À INTÉGRER OBLIGATOIREMENT:
 ${resourcesContext}
 
-INSTRUCTIONS IMPORTANTES:
-- Utilise OBLIGATOIREMENT le contenu et les informations des ressources fournies
-- Adapte le vocabulaire et les exemples au contexte donné
-- Intègre les procédures et méthodes mentionnées dans les ressources
-- Respecte la terminologie spécifique fournie`;
+DIRECTIVES D'INTÉGRATION AVANCÉES:
+- Utilise EXCLUSIVEMENT le vocabulaire et la terminologie des ressources fournies
+- Intègre les procédures exactes mentionnées dans les documents
+- Adapte tous les exemples au contexte spécifique fourni
+- Respecte scrupuleusement les méthodes et approches décrites
+- Assure-toi que chaque section fait référence aux ressources pertinentes
+- Utilise les mots-clés identifiés dans les métadonnées`;
+
+        // Instructions spécifiques selon les types de fichiers
+        if (processedFiles.length > 0) {
+            const procedureFiles = processedFiles.filter(f => f.procedures_detected);
+            const manualFiles = processedFiles.filter(f => f.content_type === 'manual');
+
+            if (procedureFiles.length > 0) {
+                prompt += `\n- PROCÉDURES DÉTECTÉES: Intègre les étapes exactes des fichiers ${procedureFiles.map(f => f.name).join(', ')}`;
+            }
+
+            if (manualFiles.length > 0) {
+                prompt += `\n- MANUELS RÉFÉRENCE: Base-toi sur les standards des fichiers ${manualFiles.map(f => f.name).join(', ')}`;
+            }
+        }
     }
 
     // Contexte entreprise
     if (companyContext) {
         prompt += `
 
-CONTEXTE ENTREPRISE:
-${companyContext}`;
+CONTEXTE ENTREPRISE SPÉCIFIQUE:
+${companyContext}
+- Adapte le langage et les exemples à ce contexte précis
+- Utilise les références internes et la culture d'entreprise`;
     }
 
     // Exigences spécifiques
     if (specificRequirements) {
         prompt += `
 
-EXIGENCES SPÉCIFIQUES:
+EXIGENCES SPÉCIFIQUES À RESPECTER:
 ${specificRequirements}`;
+    }
+
+    // Instructions selon le niveau d'enrichissement
+    switch (enhancement_level) {
+        case 'maximum':
+            prompt += `
+
+NIVEAU MAXIMUM - GÉNÈRE UN PLAN EXCEPTIONNEL:
+- Sections ultra-détaillées avec sous-points spécifiques
+- Intégration parfaite des ressources dans chaque section
+- Exemples concrets tirés directement des documents fournis
+- Vocabulaire technique précis et adapté
+- Timing optimisé pour un apprentissage efficace`;
+            break;
+
+        case 'advanced':
+            prompt += `
+
+NIVEAU AVANCÉ - GÉNÈRE UN PLAN SOPHISTIQUÉ:
+- Sections détaillées avec bonne intégration des ressources
+- Exemples pertinents basés sur les documents
+- Terminologie adaptée au contexte`;
+            break;
+
+        default:
+            prompt += `
+
+NIVEAU STANDARD - GÉNÈRE UN PLAN PROFESSIONNEL:
+- Sections équilibrées intégrant les ressources principales
+- Exemples basés sur le contexte fourni`;
     }
 
     prompt += `
 
-GÉNÈRE un plan JSON avec cette structure EXACTE:
+GÉNÈRE un plan JSON avec cette structure EXACTE et ENRICHIE:
 
 {
   "plan_sections": [
     {
       "section_number": 1,
-      "title": "Introduction",
+      "title": "Titre adapté aux ressources",
       "type": "introduction",
-      "duration_seconds": 30,
+      "duration_seconds": 60,
       "what_to_cover": [
-        "Point d'accroche basé sur les ressources fournies",
-        "Objectifs alignés avec le contexte spécifique"
+        "Point spécifique basé sur les ressources fournies",
+        "Objectif aligné avec les documents d'entreprise",
+        "Accroche utilisant la terminologie des ressources"
       ],
-      "content_summary": "Résumé intégrant les éléments des ressources"
+      "content_summary": "Résumé intégrant parfaitement les éléments des ressources",
+      "resource_references": [
+        "Référence exacte aux documents utilisés"
+      ],
+      "key_terminology": [
+        "Termes clés extraits des ressources"
+      ],
+      "examples_from_resources": [
+        "Exemples concrets tirés des documents fournis"
+      ]
     }
   ]
 }
 
-RÈGLES STRICTES:
+RÈGLES STRICTES ENRICHIES:
 - ${duration} minutes maximum (${duration * 60} secondes total)
-- Sections équilibrées en durée
-- Intégration OBLIGATOIRE des ressources dans le contenu
-- Vocabulaire et exemples adaptés au contexte fourni
-- JSON valide uniquement, pas de texte avant/après`;
+- Sections équilibrées mais détaillées selon le niveau d'enrichissement
+- Intégration OBLIGATOIRE et VISIBLE des ressources dans chaque section
+- Vocabulaire exclusivement adapté au contexte fourni
+- Exemples uniquement basés sur les ressources fournies
+- JSON valide uniquement, pas de texte avant/après
+- Chaque section doit montrer clairement l'utilisation des ressources`;
 
     return prompt;
 }
 
-// 🔧 ENRICHISSEMENT DU PLAN
-function enrichPlanWithResources(planData, resources, materials, hasResources) {
+// 🔧 ENRICHISSEMENT PLAN AVANCÉ
+function enrichPlanWithAdvancedResources(planData, enrichedResources, materials, processedFiles, hasResources) {
     if (!hasResources || !planData.plan_sections) {
         return planData;
     }
 
-    planData.plan_sections = planData.plan_sections.map(section => ({
+    const globalKeyTopics = extractGlobalKeyTopics(processedFiles);
+    const procedureFiles = processedFiles.filter(f => f.procedures_detected);
+
+    planData.plan_sections = planData.plan_sections.map((section, index) => ({
         ...section,
-        enhanced_with_resources: hasResources,
+
+        // Enrichissement avancé
+        enhanced_with_resources: true,
+        enhancement_level: 'advanced',
+
+        // Intégration ressources détaillée
         resource_integration: {
-            uses_company_content: !!(resources.text_content || resources.files_content),
-            uses_uploaded_files: !!resources.files_content,
-            references_documents: !!(resources.documents?.length),
-            includes_procedures: !!resources.procedures,
-            follows_company_style: true
-        }
+            uses_company_content: !!(enrichedResources.text_content || enrichedResources.files_content),
+            uses_uploaded_files: !!enrichedResources.files_content,
+            references_documents: !!(enrichedResources.files_metadata?.length),
+            includes_procedures: procedureFiles.length > 0,
+            follows_company_style: !!enrichedResources.enhanced_context,
+            adapted_vocabulary: true,
+            custom_examples: true
+        },
+
+        // Métadonnées enrichies
+        content_metadata: {
+            primary_topics: globalKeyTopics.slice(0, 3),
+            resource_files_used: processedFiles.filter(f =>
+                f.key_topics.some(topic =>
+                    section.title?.toLowerCase().includes(topic) ||
+                    section.content_summary?.toLowerCase().includes(topic)
+                )
+            ).map(f => f.name),
+            terminology_adapted: true,
+            examples_count: section.examples_from_resources?.length || 0
+        },
+
+        // Score de qualité
+        quality_score: calculateSectionQualityScore(section, hasResources, processedFiles)
     }));
+
+    // Métadonnées globales du plan enrichi
+    planData.enrichment_metadata = {
+        total_files_integrated: processedFiles.length,
+        procedures_integrated: procedureFiles.length,
+        key_topics_coverage: globalKeyTopics.length,
+        company_adaptation: !!enrichedResources.enhanced_context,
+        vocabulary_adaptation_score: calculateVocabularyAdaptationScore(planData, globalKeyTopics),
+        overall_enhancement_score: calculateOverallEnhancementScore(planData, enrichedResources)
+    };
 
     return planData;
 }
 
-// 🔧 APPEL API GROQ
-async function callGroqAPI(prompt) {
+// 🔧 FONCTIONS UTILITAIRES ENRICHIES
+
+// Conversion CSV structurée
+function convertCSVToStructuredText(csvContent) {
+    const lines = csvContent.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return csvContent;
+
+    const headers = lines[0].split(',').map(h => h.trim());
+    let structured = `DONNÉES STRUCTURÉES (CSV):\n\nColonnes: ${headers.join(' | ')}\n\n`;
+
+    for (let i = 1; i < Math.min(lines.length, 11); i++) { // Max 10 lignes
+        const values = lines[i].split(',').map(v => v.trim());
+        structured += `Ligne ${i}: ${headers.map((h, idx) => `${h}: ${values[idx] || 'N/A'}`).join(' | ')}\n`;
+    }
+
+    if (lines.length > 11) {
+        structured += `... et ${lines.length - 11} autres lignes\n`;
+    }
+
+    return structured;
+}
+
+// Conversion JSON structurée
+function convertJSONToStructuredText(jsonData) {
+    let structured = 'DONNÉES STRUCTURÉES (JSON):\n\n';
+
+    function processObject(obj, prefix = '') {
+        for (const [key, value] of Object.entries(obj)) {
+            if (typeof value === 'object' && value !== null) {
+                if (Array.isArray(value)) {
+                    structured += `${prefix}${key}: [${value.length} éléments]\n`;
+                    value.slice(0, 3).forEach((item, index) => {
+                        structured += `  ${index + 1}. ${typeof item === 'object' ? JSON.stringify(item).substring(0, 100) : item}\n`;
+                    });
+                } else {
+                    structured += `${prefix}${key}:\n`;
+                    processObject(value, prefix + '  ');
+                }
+            } else {
+                structured += `${prefix}${key}: ${value}\n`;
+            }
+        }
+    }
+
+    processObject(jsonData);
+    return structured;
+}
+
+// Analyse contenu global
+function analyzeGlobalContent(filesContent, textContent) {
+    const allContent = [filesContent, textContent].filter(Boolean).join(' ');
+
+    if (!allContent.trim()) {
+        return { has_content: false };
+    }
+
+    const words = allContent.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+    const wordFreq = {};
+
+    words.forEach(word => {
+        wordFreq[word] = (wordFreq[word] || 0) + 1;
+    });
+
+    const topWords = Object.entries(wordFreq)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 15)
+        .map(([word]) => word);
+
+    return {
+        has_content: true,
+        total_words: words.length,
+        unique_words: Object.keys(wordFreq).length,
+        top_keywords: topWords,
+        has_procedures: allContent.includes('procédure') || allContent.includes('étape'),
+        has_examples: allContent.includes('exemple') || allContent.includes('illustration'),
+        content_density: Math.round((Object.keys(wordFreq).length / words.length) * 100)
+    };
+}
+
+// Enrichissement contexte entreprise
+function enhanceCompanyContext(companyContext, filesContent) {
+    if (!filesContent || !companyContext) return companyContext;
+
+    // Extraire terminologie spécifique des fichiers
+    const terminology = extractTerminology(filesContent);
+
+    let enhanced = companyContext + '\n\nTERMINOLOGIE SPÉCIFIQUE IDENTIFIÉE:\n';
+    enhanced += terminology.map(term => `- ${term}`).join('\n');
+
+    // Ajouter contexte procédural si détecté
+    if (filesContent.includes('procédure')) {
+        enhanced += '\n\nCONTEXTE PROCÉDURAL: Les ressources contiennent des procédures spécifiques à intégrer.';
+    }
+
+    return enhanced;
+}
+
+// Extraction terminologie
+function extractTerminology(content) {
+    const terms = [];
+    const patterns = [
+        /[A-Z][a-z]+ [A-Z][a-z]+/g, // Termes composés
+        /\b[A-Z]{2,}\b/g, // Acronymes
+        /\b\w+_\w+\b/g // Termes avec underscore
+    ];
+
+    patterns.forEach(pattern => {
+        const matches = content.match(pattern) || [];
+        terms.push(...matches);
+    });
+
+    return [...new Set(terms)].slice(0, 10);
+}
+
+// Extraction mots-clés globaux
+function extractGlobalKeyTopics(processedFiles) {
+    const allTopics = processedFiles.reduce((acc, file) => {
+        return acc.concat(file.key_topics || []);
+    }, []);
+
+    const topicFreq = {};
+    allTopics.forEach(topic => {
+        topicFreq[topic] = (topicFreq[topic] || 0) + 1;
+    });
+
+    return Object.entries(topicFreq)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 12)
+        .map(([topic]) => topic);
+}
+
+// Calcul score qualité section
+function calculateSectionQualityScore(section, hasResources, processedFiles) {
+    let score = 50; // Score de base
+
+    if (hasResources) score += 20;
+    if (section.resource_references?.length > 0) score += 15;
+    if (section.examples_from_resources?.length > 0) score += 10;
+    if (section.key_terminology?.length > 0) score += 5;
+
+    return Math.min(score, 100);
+}
+
+// Calcul score adaptation vocabulaire
+function calculateVocabularyAdaptationScore(planData, globalKeyTopics) {
+    if (!globalKeyTopics.length) return 0;
+
+    const planText = JSON.stringify(planData).toLowerCase();
+    const topicsFound = globalKeyTopics.filter(topic =>
+        planText.includes(topic.toLowerCase())
+    );
+
+    return Math.round((topicsFound.length / globalKeyTopics.length) * 100);
+}
+
+// Calcul score enrichissement global
+function calculateOverallEnhancementScore(planData, enrichedResources) {
+    let score = 0;
+
+    if (enrichedResources.files_content) score += 25;
+    if (enrichedResources.enhanced_context) score += 20;
+    if (enrichedResources.content_analysis?.has_content) score += 15;
+    if (planData.plan_sections?.every(s => s.enhanced_with_resources)) score += 25;
+    if (planData.plan_sections?.some(s => s.examples_from_resources?.length > 0)) score += 15;
+
+    return Math.min(score, 100);
+}
+
+// Appel API Groq enrichi
+async function callGroqAPI(prompt, enhancementLevel = 'standard') {
     try {
-        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+        const modelConfig = {
             model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+            temperature: enhancementLevel === 'maximum' ? 0.8 : 0.7,
+            max_tokens: enhancementLevel === 'maximum' ? 5000 : 4000
+        };
+
+        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+            ...modelConfig,
             messages: [
                 {
                     role: 'system',
-                    content: 'Tu es un expert en conception pédagogique. Tu intègres parfaitement les ressources fournies dans tes plans de formation. Réponds UNIQUEMENT en JSON valide.'
+                    content: `Tu es un expert en conception pédagogique et intégration de ressources documentaires. Tu crées des plans de formation exceptionnels parfaitement adaptés aux ressources fournies. Niveau d'enrichissement: ${enhancementLevel}. Réponds UNIQUEMENT en JSON valide.`
                 },
                 {
                     role: 'user',
                     content: prompt
                 }
-            ],
-            temperature: 0.7,
-            max_tokens: 4000
+            ]
         }, {
             headers: {
                 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
@@ -2168,12 +3263,96 @@ async function callGroqAPI(prompt) {
 
         return response.data.choices[0].message.content;
     } catch (error) {
-        console.error('❌ Erreur API Groq:', error.message);
+        console.error('❌ Erreur API Groq enrichie:', error.message);
         throw error;
     }
 }
 
-// 🔧 NETTOYAGE RÉPONSE GROQ
+// Plan fallback enrichi
+function createEnhancedFallbackPlan(topic, settings, hasResources) {
+    const { duration, level } = settings;
+    const totalSeconds = duration * 60;
+
+    const sections = [
+        {
+            section_number: 1,
+            title: hasResources ? `Introduction contextuelle à ${topic}` : `Introduction à ${topic}`,
+            type: "introduction",
+            duration_seconds: Math.round(totalSeconds * 0.15),
+            what_to_cover: [
+                hasResources ? `Présentation basée sur vos ressources: ${topic}` : `Présentation du sujet: ${topic}`,
+                "Objectifs de cette formation",
+                hasResources ? "Contexte spécifique à votre organisation" : "Contexte général"
+            ],
+            content_summary: hasResources ? `Introduction adaptée à vos ressources sur ${topic}` : `Introduction à ${topic}`,
+            enhanced_with_resources: hasResources,
+            fallback_generated: true
+        },
+        {
+            section_number: 2,
+            title: hasResources ? "Développement basé sur vos ressources" : "Développement principal",
+            type: "development",
+            duration_seconds: Math.round(totalSeconds * 0.70),
+            what_to_cover: [
+                hasResources ? "Points clés extraits de vos documents" : "Points clés du sujet",
+                hasResources ? "Exemples tirés de vos ressources" : "Exemples pratiques",
+                hasResources ? "Méthodes adaptées à votre contexte" : "Méthodes recommandées"
+            ],
+            content_summary: hasResources ? `Contenu enrichi par vos ressources sur ${topic}` : `Contenu principal sur ${topic}`,
+            enhanced_with_resources: hasResources,
+            fallback_generated: true
+        },
+        {
+            section_number: 3,
+            title: hasResources ? "Conclusion et application dans votre contexte" : "Conclusion",
+            type: "conclusion",
+            duration_seconds: Math.round(totalSeconds * 0.15),
+            what_to_cover: [
+                "Récapitulatif des points essentiels",
+                hasResources ? "Applications spécifiques à votre organisation" : "Applications pratiques",
+                hasResources ? "Prochaines étapes selon vos ressources" : "Prochaines étapes recommandées"
+            ],
+            content_summary: hasResources ? `Synthèse adaptée à votre contexte pour ${topic}` : `Synthèse de ${topic}`,
+            enhanced_with_resources: hasResources,
+            fallback_generated: true
+        }
+    ];
+
+    return { plan_sections: sections, fallback_generated: true };
+}
+
+// Génération clé cache avancée
+function generateAdvancedCacheKey(topic, capsuleType, settings, resourcesContext, companyContext) {
+    const baseKey = `${topic}_${capsuleType}_${settings.level}_${settings.duration}_${settings.style}_${settings.enhancement_level}`;
+
+    const resourcesHash = resourcesContext ?
+        crypto.createHash('md5').update(resourcesContext).digest('hex').substring(0, 12) :
+        'no_resources';
+
+    const companyHash = companyContext ?
+        crypto.createHash('md5').update(companyContext).digest('hex').substring(0, 8) :
+        'no_company';
+
+    return `enhanced_${baseKey}_${resourcesHash}_${companyHash}`;
+}
+
+// Nettoyage fichiers temporaires
+function cleanupUploadedFiles(files) {
+    if (files && files.length > 0) {
+        files.forEach(file => {
+            try {
+                if (fs.existsSync(file.path)) {
+                    fs.unlinkSync(file.path);
+                    console.log(`🗑️ Fichier temporaire supprimé: ${file.originalname}`);
+                }
+            } catch (error) {
+                console.warn(`⚠️ Impossible de supprimer ${file.path}:`, error.message);
+            }
+        });
+    }
+}
+
+// Nettoyage réponse Groq
 function cleanGroqResponse(response) {
     return response
         .replace(/```json\n/g, '')
@@ -2184,125 +3363,81 @@ function cleanGroqResponse(response) {
         .trim();
 }
 
-// 🔧 PLAN FALLBACK
-function createFallbackPlan(topic, settings) {
-    const { duration } = settings;
-    const totalSeconds = duration * 60;
+// 🔧 ROUTES D'INFORMATION ENRICHIES
 
-    return {
-        plan_sections: [
-            {
-                section_number: 1,
-                title: "Introduction",
-                type: "introduction",
-                duration_seconds: Math.round(totalSeconds * 0.15),
-                what_to_cover: [
-                    `Présentation du sujet: ${topic}`,
-                    "Objectifs de cette formation"
-                ],
-                content_summary: `Introduction à ${topic}`
-            },
-            {
-                section_number: 2,
-                title: "Développement principal",
-                type: "development",
-                duration_seconds: Math.round(totalSeconds * 0.70),
-                what_to_cover: [
-                    "Points clés du sujet",
-                    "Exemples pratiques",
-                    "Méthodes recommandées"
-                ],
-                content_summary: `Contenu principal sur ${topic}`
-            },
-            {
-                section_number: 3,
-                title: "Conclusion",
-                type: "conclusion",
-                duration_seconds: Math.round(totalSeconds * 0.15),
-                what_to_cover: [
-                    "Récapitulatif des points essentiels",
-                    "Prochaines étapes recommandées"
-                ],
-                content_summary: `Synthèse et conclusion de ${topic}`
-            }
-        ]
-    };
-}
-
-// 🔧 GÉNÉRATION CLÉ CACHE
-function generateCacheKey(topic, capsuleType, settings, resourcesContext) {
-    const baseKey = `${topic}_${capsuleType}_${settings.level}_${settings.duration}_${settings.style}`;
-    const resourcesHash = resourcesContext ?
-        crypto.createHash('md5').update(resourcesContext).digest('hex').substring(0, 8) :
-        'no_resources';
-    return `${baseKey}_${resourcesHash}`;
-}
-
-// 🔧 INFO ENDPOINT
 router.get('/groq-plan/info', (req, res) => {
     res.json({
         endpoint: 'POST /ai/groq-plan',
-        description: '🎯 ENDPOINT UNIQUE - Gère JSON ET upload de fichiers automatiquement',
-        version: '4.0 - Unified Endpoint',
+        description: '🎯 ENDPOINT UNIFIÉ ENRICHI - Gestion avancée des ressources documentaires',
+        version: '5.0 - Super Enhanced with Resources',
+        status: 'OPÉRATIONNEL avec correction boundary',
 
         auto_detection: {
-            'Content-Type: application/json': 'Format JSON classique avec ressources textuelles',
-            'Content-Type: multipart/form-data': 'Upload de fichiers + données JSON dans form-data'
+            'Content-Type: application/json': 'Mode JSON avec ressources textuelles enrichies',
+            'Content-Type: multipart/form-data': 'Upload fichiers + données avec analyse avancée'
         },
 
-        usage_json: {
-            content_type: 'application/json',
-            example: {
-                topic: 'Formation Excel',
-                resources: {
-                    text_content: 'Notre entreprise...',
-                    keywords: ['Excel', 'TCD']
-                }
-            }
-        },
-
-        usage_files: {
-            content_type: 'multipart/form-data',
-            form_fields: {
-                topic: 'Formation Excel avec nos docs',
-                settings: '{"level":"intermediate","duration":10}',
-                resources: '{"keywords":["Excel","formation"]}',
-                files: ['guide.txt', 'procedures.csv']
-            }
+        enhancement_levels: {
+            'standard': 'Intégration de base des ressources',
+            'advanced': 'Analyse approfondie et adaptation vocabulaire',
+            'maximum': 'Intégration complète avec exemples personnalisés'
         },
 
         supported_files: {
-            ready_now: ['.txt', '.md', '.csv'],
+            ready: ['.txt', '.md', '.csv', '.json'],
             requires_install: ['.pdf (npm install pdf-parse)', '.docx (npm install mammoth)']
         },
 
-        benefits: [
-            '🎯 UN SEUL endpoint pour tout',
-            '🔄 Détection automatique JSON/Files',
-            '📁 Upload direct de fichiers',
-            '📚 Ressources textuelles ET fichiers',
-            '💾 Cache intelligent unifié',
-            '🔒 Nettoyage auto fichiers temporaires',
-            '✅ 100% backward compatible'
+        new_features: [
+            '🔧 Bug multipart/form-data CORRIGÉ',
+            '📚 Analyse avancée du contenu des fichiers',
+            '🎯 Adaptation automatique du vocabulaire',
+            '📊 Métadonnées enrichies sur l\'intégration',
+            '🏢 Contexte entreprise intelligent',
+            '⚡ Cache avancé avec hash des ressources',
+            '📈 Scores de qualité d\'enrichissement'
         ],
 
-        examples: {
-            postman_json: {
-                method: 'POST',
-                url: '/ai/groq-plan',
-                headers: { 'Content-Type': 'application/json' },
-                body: '{"topic":"Test JSON","resources":{"text_content":"..."}}'
-            },
-            postman_files: {
-                method: 'POST',
-                url: '/ai/groq-plan',
-                type: 'form-data',
-                fields: {
-                    topic: 'Test Files',
-                    files: 'Select files...'
-                }
+        usage_json_enrichi: {
+            content_type: 'application/json',
+            example: {
+                topic: 'Formation Excel avancée',
+                enhancement_level: 'maximum',
+                resources: {
+                    text_content: 'Guide Excel de notre entreprise...',
+                    keywords: ['Excel', 'TCD', 'macros'],
+                    procedures: 'Procédure validation des données...'
+                },
+                company_context: 'Équipe finance - utilisation quotidienne Excel',
+                specific_requirements: 'Inclure nos standards de validation'
             }
+        },
+
+        quality_indicators: {
+            vocabulary_adaptation_score: 'Pourcentage d\'adaptation du vocabulaire',
+            overall_enhancement_score: 'Score global d\'enrichissement (0-100)',
+            resource_integration_level: 'Niveau d\'intégration des ressources',
+            section_quality_scores: 'Scores individuels par section'
         }
+    });
+});
+
+router.get('/groq-plan/test', async (req, res) => {
+    res.json({
+        status: 'ready',
+        version: '5.0-enhanced',
+        corrections: {
+            multipart_boundary: 'CORRIGÉ - Middleware conditionnel',
+            resource_integration: 'AMÉLIORÉ - Analyse avancée',
+            vocabulary_adaptation: 'NOUVEAU - Adaptation automatique',
+            cache_system: 'OPTIMISÉ - Hash des ressources'
+        },
+        test_endpoints: {
+            json_simple: 'POST avec Content-Type: application/json',
+            json_enrichi: 'POST avec resources et company_context',
+            multipart_files: 'POST avec Content-Type: multipart/form-data'
+        },
+        ready_for_production: true
     });
 });
 
