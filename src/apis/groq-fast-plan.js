@@ -3463,6 +3463,1338 @@ GET https://edupro-ai.onrender.com/ai/groq-plan/styles
 // groq-fast-plan.js - VERSION CORRIGÉE avec gestion ressources robuste + FIX BODY MAPPING
 
 // groq-fast-plan.js - VERSION FINALE CORRIGÉE - Plus de références fictives
+// const express = require('express');
+// const axios = require('axios');
+// const { v4: uuidv4 } = require('uuid');
+// const multer = require('multer');
+// const fs = require('fs');
+// const path = require('path');
+// const crypto = require('crypto');
+
+// const router = express.Router();
+
+// // Configuration du cache
+// const planCache = new Map();
+// const CACHE_DURATION = 1000 * 60 * 15; // 15 minutes
+
+// // Configuration multer pour upload de fichiers
+// const upload = multer({
+//     dest: 'temp-uploads/',
+//     fileFilter: (req, file, cb) => {
+//         const allowedTypes = ['.pdf', '.txt', '.docx', '.md', '.csv', '.json'];
+//         const ext = path.extname(file.originalname).toLowerCase();
+//         cb(null, allowedTypes.includes(ext));
+//     },
+//     limits: {
+//         fileSize: 10 * 1024 * 1024, // 10MB max
+//         files: 10 // Maximum 10 fichiers
+//     }
+// });
+
+// // Créer le dossier temp-uploads s'il n'existe pas
+// const tempDir = path.join(__dirname, '..', 'temp-uploads');
+// if (!fs.existsSync(tempDir)) {
+//     fs.mkdirSync(tempDir, { recursive: true });
+//     console.log('📁 Dossier temp-uploads créé');
+// }
+
+// // 🔧 MIDDLEWARE CONDITIONNEL CORRIGÉ - Évite l'erreur boundary
+// const conditionalMulter = (req, res, next) => {
+//     const contentType = req.headers['content-type'] || '';
+
+//     console.log(`🔍 Content-Type détecté: ${contentType.substring(0, 50)}...`);
+
+//     if (contentType.includes('multipart/form-data')) {
+//         console.log('📁 Mode multipart/form-data - Activation multer');
+//         upload.array('files', 10)(req, res, (err) => {
+//             if (err) {
+//                 console.error('❌ Erreur multer:', err.message);
+//                 return res.status(400).json({
+//                     error: 'Erreur upload fichiers',
+//                     details: err.message,
+//                     solution: 'Vérifiez la taille (<10MB) et le type des fichiers'
+//                 });
+//             }
+//             next();
+//         });
+//     } else {
+//         console.log('📝 Mode JSON standard - Bypass multer');
+//         next(); // Passer directement au handler
+//     }
+// };
+
+// // 🎯 ENDPOINT UNIFIÉ CORRIGÉ
+// router.post('/groq-plan', conditionalMulter, async (req, res) => {
+//     const startTime = Date.now();
+
+//     try {
+//         // 🔍 DÉTECTION DU FORMAT ET VALIDATION
+//         const contentType = req.headers['content-type'] || '';
+//         const isFormData = contentType.includes('multipart/form-data');
+//         const isJSON = contentType.includes('application/json');
+
+//         console.log(`🎯 Génération plan - Format: ${isFormData ? 'multipart/form-data' : isJSON ? 'JSON' : 'autre'}`);
+
+//         let topic, capsuleType, settings, resources, reference_materials, company_context, specific_requirements;
+
+//         if (isFormData) {
+//             // 📁 FORMAT MULTIPART/FORM-DATA (avec fichiers)
+//             console.log(`📁 Traitement form-data avec ${req.files?.length || 0} fichiers`);
+
+//             topic = req.body.topic;
+//             capsuleType = req.body.capsuleType || req.body.type || 'demonstrative';
+
+//             // Parse JSON fields depuis form-data
+//             try {
+//                 settings = req.body.settings ? JSON.parse(req.body.settings) : {};
+//                 resources = req.body.resources ? JSON.parse(req.body.resources) : {};
+//                 reference_materials = req.body.reference_materials ? JSON.parse(req.body.reference_materials) : [];
+//             } catch (e) {
+//                 console.warn('⚠️ Erreur parsing JSON depuis form-data, utilisation valeurs par défaut');
+//                 settings = {};
+//                 resources = {};
+//                 reference_materials = [];
+//             }
+
+//             company_context = req.body.company_context || null;
+//             specific_requirements = req.body.specific_requirements || null;
+
+//         } else if (isJSON) {
+//             // 📝 FORMAT JSON STANDARD - MAPPING FLEXIBLE CORRIGÉ
+//             console.log('📝 Traitement JSON standard');
+
+//             topic = req.body.topic;
+
+//             // 🔧 CORRECTION: Mapping flexible des paramètres
+//             capsuleType = req.body.capsuleType || req.body.type || 'demonstrative';
+
+//             // Gestion flexible de la durée et du niveau avec fallbacks
+//             const durationFromBody = req.body.duration || req.body.duration_minutes || req.body.settings?.duration || 5;
+//             const levelFromBody = req.body.level || req.body.settings?.level || 'beginner';
+//             const styleFromBody = req.body.style || req.body.settings?.style || 'practical';
+
+//             // Construction settings avec mapping flexible et validation
+//             settings = {
+//                 level: levelFromBody,
+//                 duration: parseInt(durationFromBody) || 5, // Assure un nombre
+//                 style: styleFromBody,
+//                 enhancement_level: req.body.enhancement_level || req.body.settings?.enhancement_level || 'standard',
+//                 adapt_to_resources: req.body.adapt_to_resources !== undefined ? req.body.adapt_to_resources : true,
+//                 include_examples: req.body.include_examples !== undefined ? req.body.include_examples : true,
+//                 ...req.body.settings // Écrase avec settings explicites si fournis
+//             };
+
+//             resources = req.body.resources || {};
+//             reference_materials = req.body.reference_materials || [];
+//             company_context = req.body.company_context || null;
+//             specific_requirements = req.body.specific_requirements || null;
+
+//             console.log(`📋 Paramètres mappés: topic="${topic}", type="${capsuleType}", level="${settings.level}", durée=${settings.duration}min`);
+
+//         } else {
+//             return res.status(400).json({
+//                 error: 'Content-Type non supporté',
+//                 received: contentType,
+//                 supported: ['application/json', 'multipart/form-data'],
+//                 solution: 'Utilisez JSON pour les données simples ou multipart/form-data pour les fichiers'
+//             });
+//         }
+
+//         // 🔧 VALIDATION ENRICHIE avec messages explicites
+//         if (!topic || topic.length < 5) {
+//             cleanupUploadedFiles(req.files);
+//             return res.status(400).json({
+//                 error: 'Topic requis (minimum 5 caractères)',
+//                 received_parameters: {
+//                     topic: topic || 'non fourni',
+//                     type: capsuleType,
+//                     level: settings?.level,
+//                     duration: settings?.duration
+//                 },
+//                 format_detected: isFormData ? 'multipart/form-data' : 'JSON',
+//                 files_uploaded: req.files?.length || 0,
+//                 example_body: {
+//                     topic: 'Formation Python pour débutants',
+//                     type: 'demonstrative', // ou capsuleType
+//                     level: 'beginner',
+//                     duration_minutes: 5 // ou duration
+//                 },
+//                 supported_mappings: {
+//                     'type ou capsuleType': 'demonstrative|interactive|practical',
+//                     'level': 'beginner|intermediate|advanced',
+//                     'duration ou duration_minutes': 'nombre en minutes'
+//                 }
+//             });
+//         }
+
+//         // 🔧 VALIDATION DES SETTINGS avec correction automatique
+//         if (!settings.duration || settings.duration < 1 || settings.duration > 60) {
+//             console.warn(`⚠️ Durée invalide (${settings.duration}), correction à 5 minutes`);
+//             settings.duration = 5;
+//         }
+
+//         if (!['beginner', 'intermediate', 'advanced'].includes(settings.level)) {
+//             console.warn(`⚠️ Niveau invalide (${settings.level}), correction à 'beginner'`);
+//             settings.level = 'beginner';
+//         }
+
+//         if (!['demonstrative', 'interactive', 'practical'].includes(capsuleType)) {
+//             console.warn(`⚠️ Type invalide (${capsuleType}), correction à 'demonstrative'`);
+//             capsuleType = 'demonstrative';
+//         }
+
+//         // Settings par défaut enrichis APRÈS validation
+//         const finalSettings = {
+//             level: settings.level,
+//             duration: settings.duration,
+//             style: settings.style,
+//             enhancement_level: settings.enhancement_level || 'standard',
+//             adapt_to_resources: settings.adapt_to_resources,
+//             include_examples: settings.include_examples,
+//             ...settings
+//         };
+
+//         console.log(`⚡ Génération enrichie: "${topic.substring(0, 50)}..." (${capsuleType}, niveau: ${finalSettings.level}, durée: ${finalSettings.duration}min)`);
+
+//         // 📄 TRAITEMENT DES FICHIERS UPLOADÉS
+//         let filesContent = '';
+//         let processedFiles = [];
+//         let totalFilesSize = 0;
+
+//         if (req.files && req.files.length > 0) {
+//             console.log(`📁 Traitement de ${req.files.length} fichiers uploadés...`);
+
+//             for (const file of req.files) {
+//                 try {
+//                     const content = await parseUploadedFile(file);
+//                     const analysis = analyzeFileContent(content, file.originalname);
+
+//                     filesContent += `\n\n=== DOCUMENT: ${file.originalname.toUpperCase()} ===\n`;
+//                     filesContent += `Type: ${analysis.content_type}\n`;
+//                     filesContent += `Sujets détectés: ${analysis.key_topics.join(', ')}\n`;
+//                     filesContent += `Contenu:\n${content}\n`;
+
+//                     processedFiles.push({
+//                         name: file.originalname,
+//                         size: file.size,
+//                         type: path.extname(file.originalname),
+//                         content_length: content.length,
+//                         content_type: analysis.content_type,
+//                         key_topics: analysis.key_topics,
+//                         procedures_detected: analysis.has_procedures,
+//                         status: 'parsed'
+//                     });
+
+//                     totalFilesSize += file.size;
+
+//                 } catch (error) {
+//                     console.error(`❌ Erreur parsing ${file.originalname}:`, error.message);
+//                     processedFiles.push({
+//                         name: file.originalname,
+//                         size: file.size,
+//                         status: 'error',
+//                         error: error.message
+//                     });
+//                 }
+//             }
+//         }
+
+//         // 🔗 ENRICHISSEMENT DES RESSOURCES
+//         const enrichedResources = {
+//             ...resources,
+//             // Contenu des fichiers uploadés
+//             files_content: filesContent,
+//             // Métadonnées des fichiers
+//             files_metadata: processedFiles.filter(f => f.status === 'parsed'),
+//             // Analyse globale
+//             content_analysis: analyzeGlobalContent(filesContent, resources.text_content),
+//             // Contexte enrichi
+//             enhanced_context: company_context ? enhanceCompanyContext(company_context, filesContent) : null
+//         };
+
+//         // 🔍 CONSTRUCTION DU CONTEXTE COMPLET - CORRIGÉ
+//         let fullResourcesContext = '';
+//         let hasResources = false;
+
+//         // 🔧 CORRECTION: Vérifier si on a VRAIMENT des ressources
+//         const hasFileContent = enrichedResources.files_content && enrichedResources.files_content.trim() && enrichedResources.files_content.length > 100;
+//         const hasTextContent = enrichedResources.text_content && enrichedResources.text_content.trim() && enrichedResources.text_content.length > 10;
+//         const hasCompanyContext = company_context && company_context.trim();
+//         const hasSpecificReq = specific_requirements && specific_requirements.trim();
+
+//         // Seulement si on a du contenu réel (pas juste des métadonnées vides)
+//         if (hasFileContent || hasTextContent || hasCompanyContext || hasSpecificReq) {
+//             hasResources = true;
+//             fullResourcesContext = await buildEnhancedResourcesContext(enrichedResources, reference_materials);
+//             console.log(`📚 Contexte enrichi total: ${fullResourcesContext.length} caractères`);
+//         } else {
+//             console.log(`📝 Mode formation standard: aucune ressource documentaire fournie`);
+//             hasResources = false;
+//             fullResourcesContext = '';
+//         }
+
+//         // Cache key avec hash du contexte complet
+//         const cacheKey = generateAdvancedCacheKey(topic, capsuleType, finalSettings, fullResourcesContext, company_context);
+
+//         // Vérification cache
+//         if (planCache.has(cacheKey)) {
+//             const cached = planCache.get(cacheKey);
+//             if (Date.now() - cached.timestamp < CACHE_DURATION) {
+//                 cleanupUploadedFiles(req.files);
+
+//                 console.log('💾 Plan enrichi récupéré du cache');
+//                 return res.json({
+//                     ...cached.data,
+//                     generated_at: cached.timestamp,
+//                     from_cache: true,
+//                     cache_hit: true
+//                 });
+//             } else {
+//                 planCache.delete(cacheKey);
+//             }
+//         }
+
+//         // 🎯 CRÉATION DU PROMPT ENRICHI AVANCÉ - CORRIGÉ
+//         const superEnhancedPrompt = createSuperEnhancedPrompt(
+//             topic,
+//             capsuleType,
+//             finalSettings,
+//             fullResourcesContext,
+//             company_context,
+//             specific_requirements,
+//             processedFiles.filter(f => f.status === 'parsed'),
+//             hasResources // 🔧 NOUVEAU: Passer le flag hasResources
+//         );
+
+//         console.log(`🤖 Prompt enrichi: ${superEnhancedPrompt.length} caractères, hasResources: ${hasResources}`);
+
+//         // Génération avec Groq
+//         const groqResponse = await callGroqAPI(superEnhancedPrompt, finalSettings.enhancement_level);
+
+//         // Parsing et validation améliorés
+//         let planData;
+//         try {
+//             const cleanedResponse = cleanGroqResponse(groqResponse);
+//             planData = JSON.parse(cleanedResponse);
+
+//             // Validation de la structure
+//             if (!planData.plan_sections || !Array.isArray(planData.plan_sections)) {
+//                 throw new Error('Structure plan_sections invalide');
+//             }
+
+//         } catch (parseError) {
+//             console.error('❌ Erreur parsing JSON Groq:', parseError.message);
+//             console.log('🔄 Génération plan fallback enrichi...');
+//             planData = createEnhancedFallbackPlan(topic, finalSettings, hasResources);
+//         }
+
+//         // Enrichissement avancé du plan
+//         const superEnrichedPlan = enrichPlanWithAdvancedResources(
+//             planData,
+//             enrichedResources,
+//             reference_materials,
+//             processedFiles,
+//             hasResources
+//         );
+
+//         // Nettoyage des fichiers temporaires
+//         cleanupUploadedFiles(req.files);
+
+//         // 📊 STATISTIQUES AVANCÉES
+//         const successfulFiles = processedFiles.filter(f => f.status === 'parsed');
+//         const keyTopics = extractGlobalKeyTopics(successfulFiles);
+//         const totalTime = Date.now() - startTime;
+
+//         // 🎯 RÉSULTAT FINAL ENRICHI
+//         const result = {
+//             plan_id: uuidv4(),
+//             topic: topic,
+//             capsule_type: capsuleType,
+//             settings: finalSettings,
+
+//             // 🎯 MÉTADONNÉES FORMAT
+//             input_format: {
+//                 detected: isFormData ? 'multipart/form-data' : 'application/json',
+//                 has_file_uploads: req.files?.length > 0,
+//                 files_count: req.files?.length || 0,
+//                 total_files_size_kb: Math.round(totalFilesSize / 1024)
+//             },
+
+//             // 📁 INFORMATIONS FICHIERS DÉTAILLÉES
+//             ...(req.files?.length > 0 && {
+//                 files_processing: {
+//                     uploaded_count: req.files.length,
+//                     processed_successfully: successfulFiles.length,
+//                     failed_count: processedFiles.filter(f => f.status === 'error').length,
+//                     total_content_length: filesContent.length,
+//                     content_analysis: {
+//                         procedures_detected: successfulFiles.filter(f => f.procedures_detected).length,
+//                         key_topics_extracted: keyTopics.length,
+//                         content_types: [...new Set(successfulFiles.map(f => f.content_type))]
+//                     },
+//                     processed_files: processedFiles
+//                 }
+//             }),
+
+//             // 📚 INFORMATIONS RESSOURCES ENRICHIES - CORRIGÉ
+//             resources_enrichment: {
+//                 has_any_resources: hasResources, // 🔧 CORRECTION: Vraie valeur
+//                 has_uploaded_files: hasFileContent,
+//                 has_text_resources: hasTextContent,
+//                 has_company_context: hasCompanyContext,
+//                 has_specific_requirements: hasSpecificReq,
+//                 resource_types: Object.keys(enrichedResources).filter(k =>
+//                     enrichedResources[k] && k !== 'files_content' && k !== 'content_analysis'
+//                 ),
+//                 reference_materials_count: reference_materials?.length || 0,
+//                 total_context_length: fullResourcesContext.length, // 🔧 CORRECTION: Vraie longueur
+//                 enhancement_level: finalSettings.enhancement_level,
+//                 adaptation_applied: {
+//                     vocabulary_adapted: hasResources && finalSettings.adapt_to_resources,
+//                     examples_included: hasResources && finalSettings.include_examples,
+//                     company_terminology: hasCompanyContext,
+//                     procedures_integrated: successfulFiles.some(f => f.procedures_detected)
+//                 }
+//             },
+
+//             // 🎯 PLAN ENRICHI
+//             plan_sections: superEnrichedPlan.plan_sections,
+
+//             // 📊 MÉTADONNÉES GÉNÉRATION
+//             generation_stats: {
+//                 total_time_ms: totalTime,
+//                 groq_model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+//                 prompt_length: superEnhancedPrompt.length,
+//                 enhancement_level: finalSettings.enhancement_level,
+//                 resources_integrated: hasResources,
+//                 files_processed: successfulFiles.length,
+//                 response_quality: hasResources ? 'super_enhanced' : 'standard_quality',
+//                 key_topics_detected: keyTopics
+//             },
+
+//             generated_at: new Date().toISOString(),
+//             status: 'completed',
+//             cache_stored: true,
+//             ready_for_enhanced_slides: true,
+
+//             // 🎯 WORKFLOW SUGGESTIONS ENRICHIES
+//             next_steps: {
+//                 recommended: 'POST /ai/plan-to-markdown pour slides enrichies',
+//                 alternative: 'POST /ai/enhance-plan-to-markdown pour version super sophistiquée',
+//                 with_resources: hasResources ? 'Le contenu sera adapté à vos ressources' : null,
+//                 audio_generation: 'POST /ai/generate-narration-bark avec adaptation entreprise'
+//             },
+
+//             // 🔧 INFORMATIONS DÉBOGAGE
+//             debug_info: {
+//                 content_type_received: contentType,
+//                 files_uploaded: req.files?.length || 0,
+//                 cache_key_generated: !!cacheKey,
+//                 fallback_used: planData.fallback_generated || false,
+//                 parameter_mapping: {
+//                     original_type: req.body.type || req.body.capsuleType,
+//                     mapped_capsuleType: capsuleType,
+//                     original_duration: req.body.duration || req.body.duration_minutes,
+//                     mapped_duration: finalSettings.duration,
+//                     original_level: req.body.level,
+//                     mapped_level: finalSettings.level
+//                 },
+//                 resource_detection: {
+//                     has_file_content: hasFileContent,
+//                     has_text_content: hasTextContent,
+//                     has_company_context: hasCompanyContext,
+//                     has_specific_requirements: hasSpecificReq,
+//                     final_has_resources: hasResources
+//                 }
+//             }
+//         };
+
+//         // Sauvegarde cache
+//         planCache.set(cacheKey, {
+//             data: result,
+//             timestamp: Date.now()
+//         });
+
+//         console.log(`✅ Plan GÉNÉRÉ: ${superEnrichedPlan.plan_sections.length} sections, ${successfulFiles.length}/${req.files?.length || 0} fichiers, ${totalTime}ms, hasResources: ${hasResources}`);
+//         res.json(result);
+
+//     } catch (error) {
+//         // Nettoyage en cas d'erreur
+//         cleanupUploadedFiles(req.files);
+
+//         const totalTime = Date.now() - startTime;
+//         console.error('❌ Erreur génération plan enrichi:', error);
+
+//         res.status(500).json({
+//             error: 'Erreur génération plan enrichi',
+//             details: error.message,
+//             processing_time_ms: totalTime,
+//             files_uploaded: req.files?.length || 0,
+//             troubleshooting: {
+//                 check_content_type: 'Vérifiez le Content-Type (JSON ou multipart/form-data)',
+//                 check_groq_api: 'Vérifiez la clé API Groq',
+//                 check_files: 'Vérifiez les fichiers uploadés (taille <10MB)',
+//                 check_topic: 'Vérifiez que le topic fait au moins 5 caractères',
+//                 check_parameters: 'Vérifiez le mapping des paramètres (type/capsuleType, duration/duration_minutes)',
+//                 retry_json: 'Réessayez en mode JSON sans fichiers'
+//             }
+//         });
+//     }
+// });
+
+// // 🔧 FONCTION PARSING FICHIERS AMÉLIORÉE
+// async function parseUploadedFile(file) {
+//     const ext = path.extname(file.originalname).toLowerCase();
+
+//     try {
+//         switch (ext) {
+//             case '.txt':
+//             case '.md':
+//                 return fs.readFileSync(file.path, 'utf8');
+
+//             case '.csv':
+//                 const csvContent = fs.readFileSync(file.path, 'utf8');
+//                 return convertCSVToStructuredText(csvContent);
+
+//             case '.json':
+//                 const jsonContent = fs.readFileSync(file.path, 'utf8');
+//                 const jsonData = JSON.parse(jsonContent);
+//                 return convertJSONToStructuredText(jsonData);
+
+//             case '.pdf':
+//                 // Pour PDF : npm install pdf-parse
+//                 throw new Error('Support PDF: Exécutez "npm install pdf-parse"');
+
+//             case '.docx':
+//                 // Pour DOCX : npm install mammoth
+//                 throw new Error('Support DOCX: Exécutez "npm install mammoth"');
+
+//             default:
+//                 throw new Error(`Type de fichier non supporté: ${ext}`);
+//         }
+//     } catch (error) {
+//         throw new Error(`Erreur parsing ${file.originalname}: ${error.message}`);
+//     }
+// }
+
+// // 🔍 ANALYSE CONTENU FICHIER
+// function analyzeFileContent(content, filename) {
+//     const analysis = {
+//         content_type: 'general',
+//         key_topics: [],
+//         has_procedures: false,
+//         has_examples: false,
+//         confidence_score: 0
+//     };
+
+//     const lowerContent = content.toLowerCase();
+//     const words = lowerContent.split(/\W+/).filter(w => w.length > 3);
+
+//     // Détecter le type de contenu
+//     if (lowerContent.includes('procédure') || lowerContent.includes('étape') || /\d+\.\s/.test(content)) {
+//         analysis.content_type = 'procedure';
+//         analysis.has_procedures = true;
+//         analysis.confidence_score += 0.3;
+//     }
+
+//     if (lowerContent.includes('formation') || lowerContent.includes('cours') || lowerContent.includes('apprentissage')) {
+//         analysis.content_type = 'training_material';
+//         analysis.confidence_score += 0.2;
+//     }
+
+//     if (filename.toLowerCase().includes('guide') || filename.toLowerCase().includes('manuel')) {
+//         analysis.content_type = 'manual';
+//         analysis.confidence_score += 0.2;
+//     }
+
+//     if (lowerContent.includes('exemple') || lowerContent.includes('par exemple') || lowerContent.includes('illustration')) {
+//         analysis.has_examples = true;
+//         analysis.confidence_score += 0.1;
+//     }
+
+//     // Extraire mots-clés fréquents
+//     const wordFreq = {};
+//     words.forEach(word => {
+//         if (word.length > 4) {
+//             wordFreq[word] = (wordFreq[word] || 0) + 1;
+//         }
+//     });
+
+//     analysis.key_topics = Object.entries(wordFreq)
+//         .sort(([, a], [, b]) => b - a)
+//         .slice(0, 8)
+//         .map(([word]) => word);
+
+//     return analysis;
+// }
+
+// // 🔗 CONSTRUCTION CONTEXTE ENRICHI - CORRIGÉ
+// async function buildEnhancedResourcesContext(enrichedResources, referenceMaterials) {
+//     let context = '';
+
+//     try {
+//         // 🔧 CORRECTION: Ne traiter que le contenu réel
+//         let hasRealContent = false;
+
+//         // Contenu des fichiers avec métadonnées (seulement si contenu réel)
+//         if (enrichedResources.files_content &&
+//             enrichedResources.files_content.trim() &&
+//             enrichedResources.files_content.length > 100) {
+//             context += `DOCUMENTS FOURNIS AVEC MÉTADONNÉES:\n${enrichedResources.files_content}\n\n`;
+//             hasRealContent = true;
+//         }
+
+//         // Texte additionnel (seulement si différent et réel)
+//         if (enrichedResources.text_content &&
+//             enrichedResources.text_content.trim() &&
+//             enrichedResources.text_content !== enrichedResources.files_content &&
+//             enrichedResources.text_content.length > 10) {
+//             context += `CONTENU TEXTUEL ADDITIONNEL:\n${enrichedResources.text_content}\n\n`;
+//             hasRealContent = true;
+//         }
+
+//         // Contexte entreprise enrichi (seulement si fourni)
+//         if (enrichedResources.enhanced_context && enrichedResources.enhanced_context.trim()) {
+//             context += `CONTEXTE ENTREPRISE ENRICHI:\n${enrichedResources.enhanced_context}\n\n`;
+//             hasRealContent = true;
+//         }
+
+//         // Ressources diverses (seulement si fournies)
+//         if (enrichedResources.urls && enrichedResources.urls.length > 0) {
+//             context += `RESSOURCES WEB:\n${enrichedResources.urls.map(url => `- ${url}`).join('\n')}\n\n`;
+//             hasRealContent = true;
+//         }
+
+//         if (enrichedResources.keywords && enrichedResources.keywords.length > 0) {
+//             context += `MOTS-CLÉS PRIORITAIRES: ${enrichedResources.keywords.join(', ')}\n\n`;
+//             hasRealContent = true;
+//         }
+
+//         if (enrichedResources.procedures && enrichedResources.procedures.trim()) {
+//             context += `PROCÉDURES SPÉCIFIQUES:\n${enrichedResources.procedures}\n\n`;
+//             hasRealContent = true;
+//         }
+
+//         // Matériaux de référence (seulement si fournis)
+//         if (referenceMaterials && referenceMaterials.length > 0) {
+//             context += buildReferenceMaterialsContext(referenceMaterials);
+//             hasRealContent = true;
+//         }
+
+//         // 🔧 CORRECTION: Si pas de contenu réel, renvoyer vide
+//         if (!hasRealContent) {
+//             return '';
+//         }
+
+//         // Analyse globale SEULEMENT si on a du contenu
+//         if (enrichedResources.content_analysis && enrichedResources.content_analysis.has_content) {
+//             context = `ANALYSE GLOBALE DU CONTENU:\n${JSON.stringify(enrichedResources.content_analysis, null, 2)}\n\n` + context;
+//         }
+
+//     } catch (error) {
+//         console.error('❌ Erreur construction contexte enrichi:', error.message);
+//         return '';
+//     }
+
+//     return context;
+// }
+
+// // 🎯 PROMPT SUPER ENRICHI - CORRIGÉ
+// function createSuperEnhancedPrompt(topic, capsuleType, settings, resourcesContext, companyContext, specificRequirements, processedFiles, hasResources) {
+//     const { level, duration, style, enhancement_level } = settings;
+
+//     let prompt = `Tu es un expert en pédagogie et conception de formations professionnelles. Tu dois créer un plan de formation exceptionnel.
+
+// INFORMATIONS DE BASE:
+// - Sujet: ${topic}
+// - Type: ${capsuleType}
+// - Niveau: ${level}
+// - Durée: ${duration} minutes
+// - Style: ${style}
+// - Niveau d'enrichissement: ${enhancement_level}`;
+
+//     // 🔧 CORRECTION: Contexte ressources SEULEMENT si on en a vraiment
+//     if (hasResources && resourcesContext && resourcesContext.trim()) {
+//         prompt += `
+
+// RESSOURCES ET CONTEXTE DÉTAILLÉ À INTÉGRER OBLIGATOIREMENT:
+// ${resourcesContext}
+
+// DIRECTIVES D'INTÉGRATION AVANCÉES:
+// - Utilise EXCLUSIVEMENT le vocabulaire et la terminologie des ressources fournies
+// - Intègre les procédures exactes mentionnées dans les documents
+// - Adapte tous les exemples au contexte spécifique fourni
+// - Respecte scrupuleusement les méthodes et approches décrites
+// - Assure-toi que chaque section fait référence aux ressources pertinentes
+// - Utilise les mots-clés identifiés dans les métadonnées`;
+
+//         // Instructions spécifiques selon les types de fichiers
+//         if (processedFiles.length > 0) {
+//             const procedureFiles = processedFiles.filter(f => f.procedures_detected);
+//             const manualFiles = processedFiles.filter(f => f.content_type === 'manual');
+
+//             if (procedureFiles.length > 0) {
+//                 prompt += `\n- PROCÉDURES DÉTECTÉES: Intègre les étapes exactes des fichiers ${procedureFiles.map(f => f.name).join(', ')}`;
+//             }
+
+//             if (manualFiles.length > 0) {
+//                 prompt += `\n- MANUELS RÉFÉRENCE: Base-toi sur les standards des fichiers ${manualFiles.map(f => f.name).join(', ')}`;
+//             }
+//         }
+//     } else {
+//         // 🔧 NOUVEAU: Instructions pour formation sans ressources
+//         prompt += `
+
+// MODE FORMATION STANDARD (sans ressources documentaires):
+// - Crée un contenu pédagogique autonome et complet
+// - Utilise des exemples génériques adaptés au niveau ${level}
+// - Structure claire et progressive
+// - Pas de références à des documents externes
+// - Contenu basé sur les meilleures pratiques pédagogiques`;
+//     }
+
+//     // Contexte entreprise (seulement si fourni)
+//     if (companyContext) {
+//         prompt += `
+
+// CONTEXTE ENTREPRISE SPÉCIFIQUE:
+// ${companyContext}
+// - Adapte le langage et les exemples à ce contexte précis
+// - Utilise les références internes et la culture d'entreprise`;
+//     }
+
+//     // Exigences spécifiques (seulement si fournies)
+//     if (specificRequirements) {
+//         prompt += `
+
+// EXIGENCES SPÉCIFIQUES À RESPECTER:
+// ${specificRequirements}`;
+//     }
+
+//     // Instructions selon le niveau d'enrichissement
+//     switch (enhancement_level) {
+//         case 'maximum':
+//             prompt += hasResources ? `
+
+// NIVEAU MAXIMUM - GÉNÈRE UN PLAN EXCEPTIONNEL:
+// - Sections ultra-détaillées avec sous-points spécifiques
+// - Intégration parfaite des ressources dans chaque section
+// - Exemples concrets tirés directement des documents fournis
+// - Vocabulaire technique précis et adapté
+// - Timing optimisé pour un apprentissage efficace` : `
+
+// NIVEAU MAXIMUM - GÉNÈRE UN PLAN EXCEPTIONNEL:
+// - Sections ultra-détaillées avec sous-points spécifiques
+// - Exemples concrets et variés
+// - Vocabulaire technique précis
+// - Timing optimisé pour un apprentissage efficace
+// - Contenu riche et approfondi`;
+//             break;
+
+//         case 'advanced':
+//             prompt += hasResources ? `
+
+// NIVEAU AVANCÉ - GÉNÈRE UN PLAN SOPHISTIQUÉ:
+// - Sections détaillées avec bonne intégration des ressources
+// - Exemples pertinents basés sur les documents
+// - Terminologie adaptée au contexte` : `
+
+// NIVEAU AVANCÉ - GÉNÈRE UN PLAN SOPHISTIQUÉ:
+// - Sections détaillées et bien structurées
+// - Exemples pertinents et concrets
+// - Terminologie adaptée au niveau ${level}`;
+//             break;
+
+//         default:
+//             prompt += hasResources ? `
+
+// NIVEAU STANDARD - GÉNÈRE UN PLAN PROFESSIONNEL:
+// - Sections équilibrées intégrant les ressources principales
+// - Exemples basés sur le contexte fourni` : `
+
+// NIVEAU STANDARD - GÉNÈRE UN PLAN PROFESSIONNEL:
+// - Sections équilibrées et progressives
+// - Exemples clairs et adaptés au niveau`;
+//     }
+
+//     // 🔧 CORRECTION: Structure JSON adaptée selon les ressources
+//     prompt += `
+
+// GÉNÈRE un plan JSON avec cette structure EXACTE - OBLIGATOIREMENT ${Math.ceil(duration / 2)} à ${Math.ceil(duration / 1.5)} sections pour ${duration} minutes:
+
+// {
+//   "plan_sections": [
+//     {
+//       "section_number": 1,
+//       "title": "Titre adapté au sujet",
+//       "type": "introduction",
+//       "duration_seconds": 60,
+//       "what_to_cover": [
+//         "Point spécifique sur ${topic}",
+//         "Objectif d'apprentissage pour niveau ${level}",
+//         "Contexte d'utilisation"
+//       ],
+//       "content_summary": "Résumé de la section sur ${topic}"${hasResources ? `,
+//       "resource_references": [
+//         "Référence exacte aux documents utilisés"
+//       ],
+//       "key_terminology": [
+//         "Termes clés extraits des ressources"
+//       ],
+//       "examples_from_resources": [
+//         "Exemples concrets tirés des documents fournis"
+//       ]` : ''}
+//     }
+//   ]
+// }
+
+// RÈGLES STRICTES:
+// - ${duration} minutes maximum (${duration * 60} secondes total)
+// - OBLIGATOIREMENT ${Math.ceil(duration / 2)} à ${Math.ceil(duration / 1.5)} sections pour ${duration} minutes
+// - Sections équilibrées selon le niveau d'enrichissement
+// ${hasResources ? '- Intégration OBLIGATOIRE et VISIBLE des ressources dans chaque section\n- Vocabulaire exclusivement adapté au contexte fourni\n- Exemples uniquement basés sur les ressources fournies' : '- Contenu autonome sans références externes\n- Exemples génériques adaptés au niveau\n- Pas de champs resource_references, key_terminology ou examples_from_resources'}
+// - JSON valide uniquement, pas de texte avant/après`;
+
+//     return prompt;
+// }
+
+// // 🔧 ENRICHISSEMENT PLAN AVANCÉ - CORRIGÉ
+// function enrichPlanWithAdvancedResources(planData, enrichedResources, materials, processedFiles, hasResources) {
+//     if (!planData.plan_sections) {
+//         return planData;
+//     }
+
+//     const globalKeyTopics = extractGlobalKeyTopics(processedFiles);
+//     const procedureFiles = processedFiles.filter(f => f.procedures_detected);
+
+//     planData.plan_sections = planData.plan_sections.map((section, index) => ({
+//         ...section,
+
+//         // 🔧 CORRECTION: Enrichissement seulement si ressources
+//         ...(hasResources && {
+//             enhanced_with_resources: true,
+//             enhancement_level: 'advanced',
+
+//             // Intégration ressources détaillée
+//             resource_integration: {
+//                 uses_company_content: !!(enrichedResources.text_content || enrichedResources.files_content),
+//                 uses_uploaded_files: !!enrichedResources.files_content,
+//                 references_documents: !!(enrichedResources.files_metadata?.length),
+//                 includes_procedures: procedureFiles.length > 0,
+//                 follows_company_style: !!enrichedResources.enhanced_context,
+//                 adapted_vocabulary: true,
+//                 custom_examples: true
+//             },
+
+//             // Métadonnées enrichies
+//             content_metadata: {
+//                 primary_topics: globalKeyTopics.slice(0, 3),
+//                 resource_files_used: processedFiles.filter(f =>
+//                     f.key_topics.some(topic =>
+//                         section.title?.toLowerCase().includes(topic) ||
+//                         section.content_summary?.toLowerCase().includes(topic)
+//                     )
+//                 ).map(f => f.name),
+//                 terminology_adapted: true,
+//                 examples_count: section.examples_from_resources?.length || 0
+//             }
+//         }),
+
+//         // Score de qualité
+//         quality_score: calculateSectionQualityScore(section, hasResources, processedFiles)
+//     }));
+
+//     // 🔧 CORRECTION: Métadonnées globales seulement si ressources
+//     if (hasResources) {
+//         planData.enrichment_metadata = {
+//             total_files_integrated: processedFiles.length,
+//             procedures_integrated: procedureFiles.length,
+//             key_topics_coverage: globalKeyTopics.length,
+//             company_adaptation: !!enrichedResources.enhanced_context,
+//             vocabulary_adaptation_score: calculateVocabularyAdaptationScore(planData, globalKeyTopics),
+//             overall_enhancement_score: calculateOverallEnhancementScore(planData, enrichedResources)
+//         };
+//     }
+
+//     return planData;
+// }
+
+// // 🔧 FONCTIONS UTILITAIRES ENRICHIES
+
+// // Conversion CSV structurée
+// function convertCSVToStructuredText(csvContent) {
+//     const lines = csvContent.split('\n').filter(line => line.trim());
+//     if (lines.length < 2) return csvContent;
+
+//     const headers = lines[0].split(',').map(h => h.trim());
+//     let structured = `DONNÉES STRUCTURÉES (CSV):\n\nColonnes: ${headers.join(' | ')}\n\n`;
+
+//     for (let i = 1; i < Math.min(lines.length, 11); i++) { // Max 10 lignes
+//         const values = lines[i].split(',').map(v => v.trim());
+//         structured += `Ligne ${i}: ${headers.map((h, idx) => `${h}: ${values[idx] || 'N/A'}`).join(' | ')}\n`;
+//     }
+
+//     if (lines.length > 11) {
+//         structured += `... et ${lines.length - 11} autres lignes\n`;
+//     }
+
+//     return structured;
+// }
+
+// // Conversion JSON structurée
+// function convertJSONToStructuredText(jsonData) {
+//     let structured = 'DONNÉES STRUCTURÉES (JSON):\n\n';
+
+//     function processObject(obj, prefix = '') {
+//         for (const [key, value] of Object.entries(obj)) {
+//             if (typeof value === 'object' && value !== null) {
+//                 if (Array.isArray(value)) {
+//                     structured += `${prefix}${key}: [${value.length} éléments]\n`;
+//                     value.slice(0, 3).forEach((item, index) => {
+//                         structured += `  ${index + 1}. ${typeof item === 'object' ? JSON.stringify(item).substring(0, 100) : item}\n`;
+//                     });
+//                 } else {
+//                     structured += `${prefix}${key}:\n`;
+//                     processObject(value, prefix + '  ');
+//                 }
+//             } else {
+//                 structured += `${prefix}${key}: ${value}\n`;
+//             }
+//         }
+//     }
+
+//     processObject(jsonData);
+//     return structured;
+// }
+
+// // Analyse contenu global
+// function analyzeGlobalContent(filesContent, textContent) {
+//     const allContent = [filesContent, textContent].filter(Boolean).join(' ');
+
+//     if (!allContent.trim()) {
+//         return { has_content: false };
+//     }
+
+//     const words = allContent.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+//     const wordFreq = {};
+
+//     words.forEach(word => {
+//         wordFreq[word] = (wordFreq[word] || 0) + 1;
+//     });
+
+//     const topWords = Object.entries(wordFreq)
+//         .sort(([, a], [, b]) => b - a)
+//         .slice(0, 15)
+//         .map(([word]) => word);
+
+//     return {
+//         has_content: true,
+//         total_words: words.length,
+//         unique_words: Object.keys(wordFreq).length,
+//         top_keywords: topWords,
+//         has_procedures: allContent.includes('procédure') || allContent.includes('étape'),
+//         has_examples: allContent.includes('exemple') || allContent.includes('illustration'),
+//         content_density: Math.round((Object.keys(wordFreq).length / words.length) * 100)
+//     };
+// }
+
+// // Enrichissement contexte entreprise
+// function enhanceCompanyContext(companyContext, filesContent) {
+//     if (!filesContent || !companyContext) return companyContext;
+
+//     // Extraire terminologie spécifique des fichiers
+//     const terminology = extractTerminology(filesContent);
+
+//     let enhanced = companyContext + '\n\nTERMINOLOGIE SPÉCIFIQUE IDENTIFIÉE:\n';
+//     enhanced += terminology.map(term => `- ${term}`).join('\n');
+
+//     // Ajouter contexte procédural si détecté
+//     if (filesContent.includes('procédure')) {
+//         enhanced += '\n\nCONTEXTE PROCÉDURAL: Les ressources contiennent des procédures spécifiques à intégrer.';
+//     }
+
+//     return enhanced;
+// }
+
+// // Extraction terminologie
+// function extractTerminology(content) {
+//     const terms = [];
+//     const patterns = [
+//         /[A-Z][a-z]+ [A-Z][a-z]+/g, // Termes composés
+//         /\b[A-Z]{2,}\b/g, // Acronymes
+//         /\b\w+_\w+\b/g // Termes avec underscore
+//     ];
+
+//     patterns.forEach(pattern => {
+//         const matches = content.match(pattern) || [];
+//         terms.push(...matches);
+//     });
+
+//     return [...new Set(terms)].slice(0, 10);
+// }
+
+// // Extraction mots-clés globaux
+// function extractGlobalKeyTopics(processedFiles) {
+//     const allTopics = processedFiles.reduce((acc, file) => {
+//         return acc.concat(file.key_topics || []);
+//     }, []);
+
+//     const topicFreq = {};
+//     allTopics.forEach(topic => {
+//         topicFreq[topic] = (topicFreq[topic] || 0) + 1;
+//     });
+
+//     return Object.entries(topicFreq)
+//         .sort(([, a], [, b]) => b - a)
+//         .slice(0, 12)
+//         .map(([topic]) => topic);
+// }
+
+// // Calcul score qualité section
+// function calculateSectionQualityScore(section, hasResources, processedFiles) {
+//     let score = 50; // Score de base
+
+//     if (hasResources) score += 20;
+//     if (section.resource_references?.length > 0) score += 15;
+//     if (section.examples_from_resources?.length > 0) score += 10;
+//     if (section.key_terminology?.length > 0) score += 5;
+
+//     return Math.min(score, 100);
+// }
+
+// // Calcul score adaptation vocabulaire
+// function calculateVocabularyAdaptationScore(planData, globalKeyTopics) {
+//     if (!globalKeyTopics.length) return 0;
+
+//     const planText = JSON.stringify(planData).toLowerCase();
+//     const topicsFound = globalKeyTopics.filter(topic =>
+//         planText.includes(topic.toLowerCase())
+//     );
+
+//     return Math.round((topicsFound.length / globalKeyTopics.length) * 100);
+// }
+
+// // Calcul score enrichissement global
+// function calculateOverallEnhancementScore(planData, enrichedResources) {
+//     let score = 0;
+
+//     if (enrichedResources.files_content) score += 25;
+//     if (enrichedResources.enhanced_context) score += 20;
+//     if (enrichedResources.content_analysis?.has_content) score += 15;
+//     if (planData.plan_sections?.every(s => s.enhanced_with_resources)) score += 25;
+//     if (planData.plan_sections?.some(s => s.examples_from_resources?.length > 0)) score += 15;
+
+//     return Math.min(score, 100);
+// }
+
+// // Appel API Groq enrichi
+// async function callGroqAPI(prompt, enhancementLevel = 'standard') {
+//     try {
+//         const modelConfig = {
+//             model: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
+//             temperature: enhancementLevel === 'maximum' ? 0.8 : 0.7,
+//             max_tokens: enhancementLevel === 'maximum' ? 5000 : 4000
+//         };
+
+//         const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
+//             ...modelConfig,
+//             messages: [
+//                 {
+//                     role: 'system',
+//                     content: `Tu es un expert en conception pédagogique et intégration de ressources documentaires. Tu crées des plans de formation exceptionnels parfaitement adaptés aux ressources fournies. Niveau d'enrichissement: ${enhancementLevel}. Réponds UNIQUEMENT en JSON valide.`
+//                 },
+//                 {
+//                     role: 'user',
+//                     content: prompt
+//                 }
+//             ]
+//         }, {
+//             headers: {
+//                 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+//                 'Content-Type': 'application/json'
+//             }
+//         });
+
+//         return response.data.choices[0].message.content;
+//     } catch (error) {
+//         console.error('❌ Erreur API Groq enrichie:', error.message);
+//         throw error;
+//     }
+// }
+
+// // Plan fallback enrichi CORRIGÉ - Plus de sections
+// function createEnhancedFallbackPlan(topic, settings, hasResources) {
+//     const { duration, level } = settings;
+//     const totalSeconds = duration * 60;
+
+//     // 🔧 CORRECTION: Génère plus de sections selon la durée
+//     const sectionsCount = Math.max(3, Math.ceil(duration / 2)); // Minimum 3 sections, sinon durée/2
+
+//     const sections = [];
+
+//     // Section introduction (15% du temps)
+//     const baseSection = {
+//         section_number: 1,
+//         title: hasResources ? `Introduction contextuelle à ${topic}` : `Introduction à ${topic}`,
+//         type: "introduction",
+//         duration_seconds: Math.round(totalSeconds * 0.15),
+//         what_to_cover: [
+//             hasResources ? `Présentation basée sur vos ressources: ${topic}` : `Présentation du sujet: ${topic}`,
+//             "Objectifs de cette formation",
+//             hasResources ? "Contexte spécifique à votre organisation" : "Contexte général"
+//         ],
+//         content_summary: hasResources ? `Introduction adaptée à vos ressources sur ${topic}` : `Introduction à ${topic}`,
+//         fallback_generated: true
+//     };
+
+//     // 🔧 CORRECTION: Ajouter les champs enrichis seulement si hasResources
+//     if (hasResources) {
+//         baseSection.enhanced_with_resources = true;
+//         baseSection.resource_references = ["Ressources fournies"];
+//         baseSection.key_terminology = [topic, "formation", "apprentissage"];
+//         baseSection.examples_from_resources = [`Exemple contextuel pour ${topic}`];
+//     }
+
+//     sections.push(baseSection);
+
+//     // Sections développement (70% du temps réparti)
+//     const developmentTime = Math.round(totalSeconds * 0.70);
+//     const developmentSections = sectionsCount - 2; // Moins intro et conclusion
+//     const timePerDevelopment = Math.round(developmentTime / developmentSections);
+
+//     for (let i = 0; i < developmentSections; i++) {
+//         const devSection = {
+//             section_number: i + 2,
+//             title: hasResources ? `Point clé ${i + 1} - Basé sur vos ressources` : `Point clé ${i + 1} sur ${topic}`,
+//             type: "development",
+//             duration_seconds: timePerDevelopment,
+//             what_to_cover: [
+//                 hasResources ? `Aspect ${i + 1} extrait de vos documents` : `Aspect ${i + 1} du sujet`,
+//                 hasResources ? `Exemples tirés de vos ressources` : `Exemples pratiques`,
+//                 hasResources ? `Application dans votre contexte` : `Application pratique`
+//             ],
+//             content_summary: hasResources ? `Développement ${i + 1} enrichi par vos ressources` : `Développement ${i + 1} sur ${topic}`,
+//             fallback_generated: true
+//         };
+
+//         // 🔧 CORRECTION: Ajouter les champs enrichis seulement si hasResources
+//         if (hasResources) {
+//             devSection.enhanced_with_resources = true;
+//             devSection.resource_references = ["Ressources fournies"];
+//             devSection.key_terminology = [topic, `aspect${i + 1}`, "pratique"];
+//             devSection.examples_from_resources = [`Exemple ${i + 1} contextuel pour ${topic}`];
+//         }
+
+//         sections.push(devSection);
+//     }
+
+//     // Section conclusion (15% du temps)
+//     const conclusionSection = {
+//         section_number: sectionsCount,
+//         title: hasResources ? "Conclusion et application dans votre contexte" : "Conclusion",
+//         type: "conclusion",
+//         duration_seconds: Math.round(totalSeconds * 0.15),
+//         what_to_cover: [
+//             "Récapitulatif des points essentiels",
+//             hasResources ? "Applications spécifiques à votre organisation" : "Applications pratiques",
+//             hasResources ? "Prochaines étapes selon vos ressources" : "Prochaines étapes recommandées"
+//         ],
+//         content_summary: hasResources ? `Synthèse adaptée à votre contexte pour ${topic}` : `Synthèse de ${topic}`,
+//         fallback_generated: true
+//     };
+
+//     // 🔧 CORRECTION: Ajouter les champs enrichis seulement si hasResources
+//     if (hasResources) {
+//         conclusionSection.enhanced_with_resources = true;
+//         conclusionSection.resource_references = ["Ressources fournies"];
+//         conclusionSection.key_terminology = [topic, "synthèse", "prochaines étapes"];
+//         conclusionSection.examples_from_resources = [`Ressource complémentaire pour ${topic}`];
+//     }
+
+//     sections.push(conclusionSection);
+
+//     console.log(`🔄 Plan fallback généré: ${sections.length} sections pour ${duration} minutes, hasResources: ${hasResources}`);
+//     return { plan_sections: sections, fallback_generated: true };
+// }
+
+// // Génération clé cache avancée
+// function generateAdvancedCacheKey(topic, capsuleType, settings, resourcesContext, companyContext) {
+//     const baseKey = `${topic}_${capsuleType}_${settings.level}_${settings.duration}_${settings.style}_${settings.enhancement_level}`;
+
+//     const resourcesHash = resourcesContext ?
+//         crypto.createHash('md5').update(resourcesContext).digest('hex').substring(0, 12) :
+//         'no_resources';
+
+//     const companyHash = companyContext ?
+//         crypto.createHash('md5').update(companyContext).digest('hex').substring(0, 8) :
+//         'no_company';
+
+//     return `enhanced_${baseKey}_${resourcesHash}_${companyHash}`;
+// }
+
+// // Nettoyage fichiers temporaires
+// function cleanupUploadedFiles(files) {
+//     if (files && files.length > 0) {
+//         files.forEach(file => {
+//             try {
+//                 if (fs.existsSync(file.path)) {
+//                     fs.unlinkSync(file.path);
+//                     console.log(`🗑️ Fichier temporaire supprimé: ${file.originalname}`);
+//                 }
+//             } catch (error) {
+//                 console.warn(`⚠️ Impossible de supprimer ${file.path}:`, error.message);
+//             }
+//         });
+//     }
+// }
+
+// // Nettoyage réponse Groq
+// function cleanGroqResponse(response) {
+//     return response
+//         .replace(/```json\n/g, '')
+//         .replace(/\n```/g, '')
+//         .replace(/```/g, '')
+//         .replace(/^[^{]*/, '')
+//         .replace(/[^}]*$/, '')
+//         .trim();
+// }
+
+// // Fonction utilitaire pour les matériaux de référence
+// function buildReferenceMaterialsContext(referenceMaterials) {
+//     if (!referenceMaterials || referenceMaterials.length === 0) {
+//         return '';
+//     }
+
+//     let context = 'MATÉRIAUX DE RÉFÉRENCE:\n';
+//     referenceMaterials.forEach((material, index) => {
+//         context += `${index + 1}. ${typeof material === 'string' ? material : JSON.stringify(material)}\n`;
+//     });
+//     context += '\n';
+
+//     return context;
+// }
+
+// // 🔧 ROUTES D'INFORMATION ENRICHIES
+
+// router.get('/groq-plan/info', (req, res) => {
+//     res.json({
+//         endpoint: 'POST /ai/groq-plan',
+//         description: '🎯 ENDPOINT UNIFIÉ ENRICHI - Gestion avancée des ressources documentaires',
+//         version: '5.2 - FINAL FIX - Plus de références fictives',
+//         status: 'OPÉRATIONNEL avec correction boundary + mapping paramètres + suppression références fictives',
+
+//         auto_detection: {
+//             'Content-Type: application/json': 'Mode JSON avec ressources textuelles enrichies',
+//             'Content-Type: multipart/form-data': 'Upload fichiers + données avec analyse avancée'
+//         },
+
+//         fixes_applied: {
+//             'v5.2 FINAL': [
+//                 '🔧 SUPPRESSION des références fictives quand aucune ressource fournie',
+//                 '📊 Détection intelligente du contenu réel vs métadonnées vides',
+//                 '✅ Champs resource_references, key_terminology, examples_from_resources seulement si ressources',
+//                 '📋 Debug info avec détection des ressources réelles'
+//             ]
+//         },
+
+//         parameter_mapping: {
+//             'topic': 'Obligatoire - Sujet de formation (min 5 caractères)',
+//             'type ou capsuleType': 'demonstrative|interactive|practical (défaut: demonstrative)',
+//             'level': 'beginner|intermediate|advanced (défaut: beginner)',
+//             'duration ou duration_minutes': 'Nombre en minutes 1-60 (défaut: 5)',
+//             'style': 'practical|theoretical|mixed (défaut: practical)',
+//             'enhancement_level': 'standard|advanced|maximum (défaut: standard)'
+//         },
+
+//         resource_detection: {
+//             'no_resources': 'Plan standard sans champs resource_references',
+//             'with_resources': 'Plan enrichi avec références aux documents fournis',
+//             'detection_logic': 'Contenu > 10 caractères pour text, > 100 pour files'
+//         },
+
+//         usage_examples: {
+//             simple_no_resources: {
+//                 input: {
+//                     topic: 'python',
+//                     type: 'demonstrative',
+//                     level: 'beginner',
+//                     duration_minutes: 5
+//                 },
+//                 output: 'Plan 3-4 sections SANS resource_references, key_terminology, examples_from_resources'
+//             },
+//             with_resources: {
+//                 input: {
+//                     topic: 'Formation Excel',
+//                     resources: {
+//                         text_content: 'Notre guide Excel interne contient...'
+//                     }
+//                 },
+//                 output: 'Plan enrichi AVEC resource_references, key_terminology, examples_from_resources'
+//             }
+//         },
+
+//         quality_indicators: {
+//             has_any_resources: 'true/false selon détection réelle',
+//             total_context_length: '0 si pas de ressources, >0 si ressources',
+//             resource_detection: 'Objet détaillé dans debug_info'
+//         }
+//     });
+// });
+
+// router.get('/groq-plan/test', async (req, res) => {
+//     res.json({
+//         status: 'ready',
+//         version: '5.2-final-no-fake-references',
+//         corrections: {
+//             fake_references: 'CORRIGÉ - Plus de références fictives',
+//             resource_detection: 'AMÉLIORÉ - Détection intelligente contenu réel',
+//             conditional_fields: 'NOUVEAU - Champs enrichis seulement si ressources',
+//             debug_tracking: 'NOUVEAU - Suivi détaillé détection ressources'
+//         },
+//         test_scenarios: {
+//             no_resources: {
+//                 url: 'POST /ai/groq-plan',
+//                 body: {
+//                     topic: 'python basics',
+//                     type: 'demonstrative',
+//                     duration_minutes: 5
+//                 },
+//                 expected: {
+//                     has_any_resources: false,
+//                     sections_without: ['resource_references', 'key_terminology', 'examples_from_resources'],
+//                     total_context_length: 0
+//                 }
+//             },
+//             with_resources: {
+//                 url: 'POST /ai/groq-plan',
+//                 body: {
+//                     topic: 'Formation Excel',
+//                     resources: {
+//                         text_content: 'Notre équipe utilise Excel quotidiennement pour les analyses financières...'
+//                     }
+//                 },
+//                 expected: {
+//                     has_any_resources: true,
+//                     sections_with: ['resource_references', 'key_terminology', 'examples_from_resources'],
+//                     total_context_length: '>0'
+//                 }
+//             }
+//         },
+//         ready_for_production: true,
+//         final_fix_confirmed: 'Le problème des références fictives est définitivement résolu'
+//     });
+// });
+
+// module.exports = router;
+
+
+
+
+
+
+
+
+
 const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
@@ -3788,6 +5120,24 @@ router.post('/groq-plan', conditionalMulter, async (req, res) => {
             planData = createEnhancedFallbackPlan(topic, finalSettings, hasResources);
         }
 
+        // 🔧 VALIDATION MINIMUM 4 SECTIONS - AJOUT
+        if (!planData.plan_sections || planData.plan_sections.length < 4) {
+            console.warn(`⚠️ Plan avec seulement ${planData.plan_sections?.length || 0} sections, régénération fallback...`);
+            planData = createEnhancedFallbackPlan(topic, finalSettings, hasResources);
+        }
+
+        // 🔧 VALIDATION STRUCTURE OBLIGATOIRE - AJOUT
+        const hasIntro = planData.plan_sections.some(s => s.type === 'introduction');
+        const devSections = planData.plan_sections.filter(s => s.type === 'development');
+        const hasConclusion = planData.plan_sections.some(s => s.type === 'conclusion');
+
+        if (!hasIntro || devSections.length < 2 || !hasConclusion) {
+            console.warn(`⚠️ Structure invalide (intro:${hasIntro}, dev:${devSections.length}, concl:${hasConclusion}), régénération...`);
+            planData = createEnhancedFallbackPlan(topic, finalSettings, hasResources);
+        }
+
+        console.log(`✅ Plan validé: ${planData.plan_sections.length} sections (intro:${hasIntro}, dev:${devSections.length}, concl:${hasConclusion})`);
+
         // Enrichissement avancé du plan
         const superEnrichedPlan = enrichPlanWithAdvancedResources(
             planData,
@@ -4103,6 +5453,11 @@ async function buildEnhancedResourcesContext(enrichedResources, referenceMateria
 function createSuperEnhancedPrompt(topic, capsuleType, settings, resourcesContext, companyContext, specificRequirements, processedFiles, hasResources) {
     const { level, duration, style, enhancement_level } = settings;
 
+    // 🔧 CORRECTION: Calcul minimum 4 sections (intro + 2 dev + conclusion)
+    const minSections = 4;
+    const idealSections = Math.max(minSections, Math.ceil(duration / 1.5));
+    const maxSections = Math.max(minSections, Math.ceil(duration / 1.2));
+
     let prompt = `Tu es un expert en pédagogie et conception de formations professionnelles. Tu dois créer un plan de formation exceptionnel.
 
 INFORMATIONS DE BASE:
@@ -4217,24 +5572,33 @@ NIVEAU STANDARD - GÉNÈRE UN PLAN PROFESSIONNEL:
 - Exemples clairs et adaptés au niveau`;
     }
 
-    // 🔧 CORRECTION: Structure JSON adaptée selon les ressources
+    // 🔧 CORRECTION: Structure JSON avec minimum 4 sections OBLIGATOIRES
     prompt += `
 
-GÉNÈRE un plan JSON avec cette structure EXACTE - OBLIGATOIREMENT ${Math.ceil(duration / 2)} à ${Math.ceil(duration / 1.5)} sections pour ${duration} minutes:
+GÉNÈRE un plan JSON avec cette structure EXACTE - OBLIGATOIREMENT MINIMUM ${minSections} sections:
+
+STRUCTURE OBLIGATOIRE:
+1. Section INTRODUCTION (type: "introduction")
+2. Section DÉVELOPPEMENT 1 (type: "development") 
+3. Section DÉVELOPPEMENT 2 (type: "development")
+4. Section CONCLUSION (type: "conclusion")
++ Sections supplémentaires si durée > 5 minutes
+
+Total: ${idealSections} à ${maxSections} sections pour ${duration} minutes
 
 {
   "plan_sections": [
     {
       "section_number": 1,
-      "title": "Titre adapté au sujet",
+      "title": "Introduction à ${topic}",
       "type": "introduction",
       "duration_seconds": 60,
       "what_to_cover": [
-        "Point spécifique sur ${topic}",
-        "Objectif d'apprentissage pour niveau ${level}",
-        "Contexte d'utilisation"
+        "Présentation du sujet ${topic}",
+        "Objectifs d'apprentissage niveau ${level}",
+        "Plan de la formation"
       ],
-      "content_summary": "Résumé de la section sur ${topic}"${hasResources ? `,
+      "content_summary": "Introduction complète à ${topic}"${hasResources ? `,
       "resource_references": [
         "Référence exacte aux documents utilisés"
       ],
@@ -4244,18 +5608,220 @@ GÉNÈRE un plan JSON avec cette structure EXACTE - OBLIGATOIREMENT ${Math.ceil(
       "examples_from_resources": [
         "Exemples concrets tirés des documents fournis"
       ]` : ''}
+    },
+    {
+      "section_number": 2,
+      "title": "Premier aspect fondamental de ${topic}",
+      "type": "development",
+      "duration_seconds": 120,
+      "what_to_cover": [
+        "Premier point clé de ${topic}",
+        "Concepts essentiels",
+        "Applications pratiques"
+      ],
+      "content_summary": "Développement du premier aspect"${hasResources ? `,
+      "resource_references": [
+        "Documents pertinents"
+      ],
+      "key_terminology": [
+        "Termes spécialisés"
+      ],
+      "examples_from_resources": [
+        "Exemples contextuels"
+      ]` : ''}
+    },
+    {
+      "section_number": 3,
+      "title": "Deuxième aspect essentiel de ${topic}",
+      "type": "development", 
+      "duration_seconds": 120,
+      "what_to_cover": [
+        "Deuxième point clé de ${topic}",
+        "Approfondissement",
+        "Cas pratiques"
+      ],
+      "content_summary": "Développement du deuxième aspect"${hasResources ? `,
+      "resource_references": [
+        "Documents complémentaires"
+      ],
+      "key_terminology": [
+        "Vocabulaire technique"
+      ],
+      "examples_from_resources": [
+        "Illustrations concrètes"
+      ]` : ''}
+    },
+    {
+      "section_number": 4,
+      "title": "Synthèse et prochaines étapes",
+      "type": "conclusion",
+      "duration_seconds": 60,
+      "what_to_cover": [
+        "Récapitulatif des points essentiels",
+        "Applications pratiques",
+        "Ressources pour aller plus loin"
+      ],
+      "content_summary": "Conclusion et synthèse de ${topic}"${hasResources ? `,
+      "resource_references": [
+        "Ressources de synthèse"
+      ],
+      "key_terminology": [
+        "Concepts consolidés"
+      ],
+      "examples_from_resources": [
+        "Références finales"
+      ]` : ''}
     }
   ]
 }
 
 RÈGLES STRICTES:
+- MINIMUM 4 sections OBLIGATOIRES (1 intro + 2 développement + 1 conclusion)
 - ${duration} minutes maximum (${duration * 60} secondes total)
-- OBLIGATOIREMENT ${Math.ceil(duration / 2)} à ${Math.ceil(duration / 1.5)} sections pour ${duration} minutes
-- Sections équilibrées selon le niveau d'enrichissement
+- Sections développement TOUJOURS de type "development"
+- Répartition équilibrée du temps
 ${hasResources ? '- Intégration OBLIGATOIRE et VISIBLE des ressources dans chaque section\n- Vocabulaire exclusivement adapté au contexte fourni\n- Exemples uniquement basés sur les ressources fournies' : '- Contenu autonome sans références externes\n- Exemples génériques adaptés au niveau\n- Pas de champs resource_references, key_terminology ou examples_from_resources'}
 - JSON valide uniquement, pas de texte avant/après`;
 
     return prompt;
+}
+
+// 2. CORRECTION dans createEnhancedFallbackPlan
+function createEnhancedFallbackPlan(topic, settings, hasResources) {
+    const { duration, level } = settings;
+    const totalSeconds = duration * 60;
+
+    // 🔧 CORRECTION: MINIMUM 4 sections TOUJOURS
+    const minSections = 4; // 1 intro + 2 dev + 1 conclusion
+    const sectionsCount = Math.max(minSections, Math.ceil(duration / 1.5));
+
+    const sections = [];
+
+    // 1. Section introduction (15% du temps)
+    const introSection = {
+        section_number: 1,
+        title: hasResources ? `Introduction contextuelle à ${topic}` : `Introduction à ${topic}`,
+        type: "introduction",
+        duration_seconds: Math.round(totalSeconds * 0.15),
+        what_to_cover: [
+            hasResources ? `Présentation basée sur vos ressources: ${topic}` : `Présentation du sujet: ${topic}`,
+            "Objectifs de cette formation",
+            hasResources ? "Contexte spécifique à votre organisation" : "Plan de la formation"
+        ],
+        content_summary: hasResources ? `Introduction adaptée à vos ressources sur ${topic}` : `Introduction complète à ${topic}`,
+        fallback_generated: true
+    };
+
+    if (hasResources) {
+        introSection.enhanced_with_resources = true;
+        introSection.resource_references = ["Ressources fournies"];
+        introSection.key_terminology = [topic, "formation", "apprentissage"];
+        introSection.examples_from_resources = [`Exemple contextuel pour ${topic}`];
+    }
+
+    sections.push(introSection);
+
+    // 2. MINIMUM 2 sections développement (65% du temps réparti)
+    const developmentTime = Math.round(totalSeconds * 0.65);
+    const developmentSections = Math.max(2, sectionsCount - 2); // Minimum 2 développement
+    const timePerDevelopment = Math.round(developmentTime / developmentSections);
+
+    for (let i = 0; i < developmentSections; i++) {
+        const devSection = {
+            section_number: i + 2,
+            title: hasResources ? `${getDevTitle(i)} - Basé sur vos ressources` : `${getDevTitle(i)} de ${topic}`,
+            type: "development",
+            duration_seconds: timePerDevelopment,
+            what_to_cover: [
+                hasResources ? `Aspect ${i + 1} extrait de vos documents` : `${getDevAspect(i)} du sujet`,
+                hasResources ? `Exemples tirés de vos ressources` : `Exemples pratiques`,
+                hasResources ? `Application dans votre contexte` : `Application concrète`
+            ],
+            content_summary: hasResources ? `Développement ${i + 1} enrichi par vos ressources` : `${getDevSummary(i)} sur ${topic}`,
+            fallback_generated: true
+        };
+
+        if (hasResources) {
+            devSection.enhanced_with_resources = true;
+            devSection.resource_references = ["Ressources fournies"];
+            devSection.key_terminology = [topic, getDevKeyword(i), "pratique"];
+            devSection.examples_from_resources = [`Exemple ${i + 1} contextuel pour ${topic}`];
+        }
+
+        sections.push(devSection);
+    }
+
+    // 3. Section conclusion (20% du temps)
+    const conclusionSection = {
+        section_number: sectionsCount,
+        title: hasResources ? "Synthèse et application dans votre contexte" : "Synthèse et prochaines étapes",
+        type: "conclusion",
+        duration_seconds: Math.round(totalSeconds * 0.20),
+        what_to_cover: [
+            "Récapitulatif des points essentiels",
+            hasResources ? "Applications spécifiques à votre organisation" : "Applications pratiques",
+            hasResources ? "Prochaines étapes selon vos ressources" : "Ressources pour aller plus loin"
+        ],
+        content_summary: hasResources ? `Synthèse adaptée à votre contexte pour ${topic}` : `Conclusion complète de ${topic}`,
+        fallback_generated: true
+    };
+
+    if (hasResources) {
+        conclusionSection.enhanced_with_resources = true;
+        conclusionSection.resource_references = ["Ressources fournies"];
+        conclusionSection.key_terminology = [topic, "synthèse", "prochaines étapes"];
+        conclusionSection.examples_from_resources = [`Ressource complémentaire pour ${topic}`];
+    }
+
+    sections.push(conclusionSection);
+
+    console.log(`🔄 Plan fallback généré: ${sections.length} sections (min ${minSections}) pour ${duration} minutes, hasResources: ${hasResources}`);
+    return { plan_sections: sections, fallback_generated: true };
+}
+
+// Fonctions utilitaires pour les titres de développement
+function getDevTitle(index) {
+    const titles = [
+        "Concepts fondamentaux",
+        "Aspects pratiques",
+        "Applications avancées",
+        "Optimisation et bonnes pratiques",
+        "Cas d'usage spécialisés"
+    ];
+    return titles[index] || `Aspect ${index + 1}`;
+}
+
+function getDevAspect(index) {
+    const aspects = [
+        "Fondements théoriques",
+        "Applications pratiques",
+        "Méthodes avancées",
+        "Optimisation",
+        "Spécialisations"
+    ];
+    return aspects[index] || `Aspect ${index + 1}`;
+}
+
+function getDevSummary(index) {
+    const summaries = [
+        "Bases essentielles",
+        "Mise en pratique",
+        "Approfondissement",
+        "Perfectionnement",
+        "Spécialisation"
+    ];
+    return summaries[index] || `Développement ${index + 1}`;
+}
+
+function getDevKeyword(index) {
+    const keywords = [
+        "fondamentaux",
+        "pratique",
+        "avancé",
+        "optimisation",
+        "spécialisé"
+    ];
+    return keywords[index] || `aspect${index + 1}`;
 }
 
 // 🔧 ENRICHISSEMENT PLAN AVANCÉ - CORRIGÉ
@@ -4522,101 +6088,6 @@ async function callGroqAPI(prompt, enhancementLevel = 'standard') {
     }
 }
 
-// Plan fallback enrichi CORRIGÉ - Plus de sections
-function createEnhancedFallbackPlan(topic, settings, hasResources) {
-    const { duration, level } = settings;
-    const totalSeconds = duration * 60;
-
-    // 🔧 CORRECTION: Génère plus de sections selon la durée
-    const sectionsCount = Math.max(3, Math.ceil(duration / 2)); // Minimum 3 sections, sinon durée/2
-
-    const sections = [];
-
-    // Section introduction (15% du temps)
-    const baseSection = {
-        section_number: 1,
-        title: hasResources ? `Introduction contextuelle à ${topic}` : `Introduction à ${topic}`,
-        type: "introduction",
-        duration_seconds: Math.round(totalSeconds * 0.15),
-        what_to_cover: [
-            hasResources ? `Présentation basée sur vos ressources: ${topic}` : `Présentation du sujet: ${topic}`,
-            "Objectifs de cette formation",
-            hasResources ? "Contexte spécifique à votre organisation" : "Contexte général"
-        ],
-        content_summary: hasResources ? `Introduction adaptée à vos ressources sur ${topic}` : `Introduction à ${topic}`,
-        fallback_generated: true
-    };
-
-    // 🔧 CORRECTION: Ajouter les champs enrichis seulement si hasResources
-    if (hasResources) {
-        baseSection.enhanced_with_resources = true;
-        baseSection.resource_references = ["Ressources fournies"];
-        baseSection.key_terminology = [topic, "formation", "apprentissage"];
-        baseSection.examples_from_resources = [`Exemple contextuel pour ${topic}`];
-    }
-
-    sections.push(baseSection);
-
-    // Sections développement (70% du temps réparti)
-    const developmentTime = Math.round(totalSeconds * 0.70);
-    const developmentSections = sectionsCount - 2; // Moins intro et conclusion
-    const timePerDevelopment = Math.round(developmentTime / developmentSections);
-
-    for (let i = 0; i < developmentSections; i++) {
-        const devSection = {
-            section_number: i + 2,
-            title: hasResources ? `Point clé ${i + 1} - Basé sur vos ressources` : `Point clé ${i + 1} sur ${topic}`,
-            type: "development",
-            duration_seconds: timePerDevelopment,
-            what_to_cover: [
-                hasResources ? `Aspect ${i + 1} extrait de vos documents` : `Aspect ${i + 1} du sujet`,
-                hasResources ? `Exemples tirés de vos ressources` : `Exemples pratiques`,
-                hasResources ? `Application dans votre contexte` : `Application pratique`
-            ],
-            content_summary: hasResources ? `Développement ${i + 1} enrichi par vos ressources` : `Développement ${i + 1} sur ${topic}`,
-            fallback_generated: true
-        };
-
-        // 🔧 CORRECTION: Ajouter les champs enrichis seulement si hasResources
-        if (hasResources) {
-            devSection.enhanced_with_resources = true;
-            devSection.resource_references = ["Ressources fournies"];
-            devSection.key_terminology = [topic, `aspect${i + 1}`, "pratique"];
-            devSection.examples_from_resources = [`Exemple ${i + 1} contextuel pour ${topic}`];
-        }
-
-        sections.push(devSection);
-    }
-
-    // Section conclusion (15% du temps)
-    const conclusionSection = {
-        section_number: sectionsCount,
-        title: hasResources ? "Conclusion et application dans votre contexte" : "Conclusion",
-        type: "conclusion",
-        duration_seconds: Math.round(totalSeconds * 0.15),
-        what_to_cover: [
-            "Récapitulatif des points essentiels",
-            hasResources ? "Applications spécifiques à votre organisation" : "Applications pratiques",
-            hasResources ? "Prochaines étapes selon vos ressources" : "Prochaines étapes recommandées"
-        ],
-        content_summary: hasResources ? `Synthèse adaptée à votre contexte pour ${topic}` : `Synthèse de ${topic}`,
-        fallback_generated: true
-    };
-
-    // 🔧 CORRECTION: Ajouter les champs enrichis seulement si hasResources
-    if (hasResources) {
-        conclusionSection.enhanced_with_resources = true;
-        conclusionSection.resource_references = ["Ressources fournies"];
-        conclusionSection.key_terminology = [topic, "synthèse", "prochaines étapes"];
-        conclusionSection.examples_from_resources = [`Ressource complémentaire pour ${topic}`];
-    }
-
-    sections.push(conclusionSection);
-
-    console.log(`🔄 Plan fallback généré: ${sections.length} sections pour ${duration} minutes, hasResources: ${hasResources}`);
-    return { plan_sections: sections, fallback_generated: true };
-}
-
 // Génération clé cache avancée
 function generateAdvancedCacheKey(topic, capsuleType, settings, resourcesContext, companyContext) {
     const baseKey = `${topic}_${capsuleType}_${settings.level}_${settings.duration}_${settings.style}_${settings.enhancement_level}`;
@@ -4680,8 +6151,8 @@ router.get('/groq-plan/info', (req, res) => {
     res.json({
         endpoint: 'POST /ai/groq-plan',
         description: '🎯 ENDPOINT UNIFIÉ ENRICHI - Gestion avancée des ressources documentaires',
-        version: '5.2 - FINAL FIX - Plus de références fictives',
-        status: 'OPÉRATIONNEL avec correction boundary + mapping paramètres + suppression références fictives',
+        version: '5.3 - MINIMUM 4 SECTIONS - intro + 2 dev + conclusion garanties',
+        status: 'OPÉRATIONNEL avec correction boundary + mapping paramètres + minimum 4 sections',
 
         auto_detection: {
             'Content-Type: application/json': 'Mode JSON avec ressources textuelles enrichies',
@@ -4689,12 +6160,19 @@ router.get('/groq-plan/info', (req, res) => {
         },
 
         fixes_applied: {
-            'v5.2 FINAL': [
-                '🔧 SUPPRESSION des références fictives quand aucune ressource fournie',
-                '📊 Détection intelligente du contenu réel vs métadonnées vides',
-                '✅ Champs resource_references, key_terminology, examples_from_resources seulement si ressources',
-                '📋 Debug info avec détection des ressources réelles'
+            'v5.3 FINAL': [
+                '🔧 MINIMUM 4 sections GARANTIES (1 intro + 2 dev + 1 conclusion)',
+                '📊 Validation structure obligatoire avec régénération automatique',
+                '✅ Fallback plan amélioré avec répartition équilibrée du temps',
+                '📋 Instructions Groq renforcées pour structure minimum'
             ]
+        },
+
+        structure_guarantee: {
+            minimum_sections: 4,
+            required_types: ['introduction', 'development', 'development', 'conclusion'],
+            fallback_if_invalid: 'Régénération automatique du plan',
+            time_distribution: '15% intro + 65% développement + 20% conclusion'
         },
 
         parameter_mapping: {
@@ -4706,37 +6184,16 @@ router.get('/groq-plan/info', (req, res) => {
             'enhancement_level': 'standard|advanced|maximum (défaut: standard)'
         },
 
-        resource_detection: {
-            'no_resources': 'Plan standard sans champs resource_references',
-            'with_resources': 'Plan enrichi avec références aux documents fournis',
-            'detection_logic': 'Contenu > 10 caractères pour text, > 100 pour files'
-        },
-
         usage_examples: {
-            simple_no_resources: {
+            simple_plan: {
                 input: {
-                    topic: 'python',
+                    topic: 'python basics',
                     type: 'demonstrative',
                     level: 'beginner',
                     duration_minutes: 5
                 },
-                output: 'Plan 3-4 sections SANS resource_references, key_terminology, examples_from_resources'
-            },
-            with_resources: {
-                input: {
-                    topic: 'Formation Excel',
-                    resources: {
-                        text_content: 'Notre guide Excel interne contient...'
-                    }
-                },
-                output: 'Plan enrichi AVEC resource_references, key_terminology, examples_from_resources'
+                output: 'Plan 4 sections minimum : intro + 2 développement + conclusion'
             }
-        },
-
-        quality_indicators: {
-            has_any_resources: 'true/false selon détection réelle',
-            total_context_length: '0 si pas de ressources, >0 si ressources',
-            resource_detection: 'Objet détaillé dans debug_info'
         }
     });
 });
@@ -4744,44 +6201,37 @@ router.get('/groq-plan/info', (req, res) => {
 router.get('/groq-plan/test', async (req, res) => {
     res.json({
         status: 'ready',
-        version: '5.2-final-no-fake-references',
+        version: '5.3-minimum-4-sections-guaranteed',
         corrections: {
-            fake_references: 'CORRIGÉ - Plus de références fictives',
-            resource_detection: 'AMÉLIORÉ - Détection intelligente contenu réel',
-            conditional_fields: 'NOUVEAU - Champs enrichis seulement si ressources',
-            debug_tracking: 'NOUVEAU - Suivi détaillé détection ressources'
+            minimum_sections: 'GARANTIES - 4 sections minimum toujours',
+            structure_validation: 'NOUVEAU - Validation intro+2dev+conclusion',
+            fallback_improved: 'AMÉLIORÉ - Plan fallback avec 4 sections structurées',
+            prompt_enhanced: 'RENFORCÉ - Instructions Groq avec structure obligatoire'
         },
         test_scenarios: {
-            no_resources: {
+            minimum_structure: {
                 url: 'POST /ai/groq-plan',
                 body: {
-                    topic: 'python basics',
+                    topic: 'formation javascript',
                     type: 'demonstrative',
-                    duration_minutes: 5
+                    duration_minutes: 3
                 },
                 expected: {
-                    has_any_resources: false,
-                    sections_without: ['resource_references', 'key_terminology', 'examples_from_resources'],
-                    total_context_length: 0
-                }
-            },
-            with_resources: {
-                url: 'POST /ai/groq-plan',
-                body: {
-                    topic: 'Formation Excel',
-                    resources: {
-                        text_content: 'Notre équipe utilise Excel quotidiennement pour les analyses financières...'
-                    }
-                },
-                expected: {
-                    has_any_resources: true,
-                    sections_with: ['resource_references', 'key_terminology', 'examples_from_resources'],
-                    total_context_length: '>0'
+                    sections_count: '>=4',
+                    types_required: ['introduction', 'development', 'development', 'conclusion'],
+                    development_sections: '>=2'
                 }
             }
         },
+        validation_process: {
+            step1: 'Génération avec Groq (instructions renforcées)',
+            step2: 'Validation nombre sections (min 4)',
+            step3: 'Validation structure (intro+2dev+conclusion)',
+            step4: 'Régénération fallback si nécessaire',
+            step5: 'Confirmation structure finale'
+        },
         ready_for_production: true,
-        final_fix_confirmed: 'Le problème des références fictives est définitivement résolu'
+        minimum_4_sections_confirmed: 'Le problème des plans à 3 sections est définitivement résolu'
     });
 });
 
