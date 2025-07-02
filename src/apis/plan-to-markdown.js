@@ -5993,11 +5993,12 @@ function analyzeAvailableResources(groqPlanData) {
 }
 
 // 🎨 CRÉATION PROMPT MARKDOWN ENRICHI - VERSION CORRIGÉE
+// 🎨 CRÉATION PROMPT MARKDOWN ENRICHI - VERSION CORRIGÉE
 function createEnhancedMarkdownPrompt(planData, resourcesAnalysis) {
     const { topic, plan_sections, settings } = planData;
     const { level = 'beginner', duration = 5, style = 'practical' } = settings || {};
 
-    let prompt = `Crée un Markdown Slidev sophistiqué qui utilise les ressources fournies et RESPECTE la structure des layouts:
+    let prompt = `Crée un Markdown Slidev sophistiqué qui utilise les ressources fournies:
 
 INFORMATIONS:
 - Sujet: ${topic}
@@ -6028,31 +6029,7 @@ RESSOURCES DISPONIBLES:
         return `${i + 1}. ${section.title} (${section.duration_seconds}s)\n   Points: ${section.what_to_cover ? section.what_to_cover.join(', ') : 'À développer'}`;
     }).join('\n\n')}`;
 
-    prompt += `\n\n⚠️ RÈGLES CRITIQUES POUR SLIDEV:
-1. Pour layout: two-cols, TOUS les titres doivent être DANS les templates de slot
-2. JAMAIS de contenu en dehors des <template v-slot:default> et <template v-slot:right>
-3. Structure correcte pour two-cols:
-
----
-layout: two-cols
----
-
-<template v-slot:default>
-
-# Titre Principal
-## Sous-titre
-
-Contenu...
-
-</template>
-
-<template v-slot:right>
-
-Contenu de droite...
-
-</template>
-
-GÉNÈRE un Markdown Slidev enrichi avec intégration des ressources:
+    prompt += `\n\nGÉNÈRE un Markdown Slidev enrichi avec intégration des ressources:
 
 ---
 theme: ${resourcesAnalysis.company_context_integrated ? 'corporate' : 'academic'}
@@ -6107,14 +6084,17 @@ ${resourcesAnalysis.extracted_examples.slice(0, 2).map(example => `    <div>• 
 </div>`;
 
         } else if (section.type === 'development') {
+            // 🚀 CORRECTION PRINCIPALE - Layout default au lieu de two-cols problématique
             return `
 ---
-layout: two-cols
+layout: default
 ---
 
-<template v-slot:default>
-
 # ${section.title}
+
+<div class="grid grid-cols-2 gap-8 mt-8">
+
+<div class="space-y-4">
 
 ${section.what_to_cover ? section.what_to_cover.map((point, i) => `
 ## ${i + 1}. ${point}
@@ -6130,9 +6110,9 @@ ${section.enhanced_with_resources ? `
 `}
 `).join('') : '## Contenu principal'}
 
-</template>
+</div>
 
-<template v-slot:right>
+<div class="h-full">
 
 ${section.enhanced_with_resources && resourcesAnalysis.extracted_examples.length > 0 ? `
 <div class="bg-green-50 p-6 rounded-xl h-full">
@@ -6152,7 +6132,9 @@ ${resourcesAnalysis.extracted_examples.slice(0, 3).map(example => `    <div clas
 </div>
 `}
 
-</template>
+</div>
+
+</div>
 
 <div class="mt-8 p-4 bg-blue-50 rounded-lg">
   <div class="font-semibold">Résumé</div>
@@ -6222,11 +6204,10 @@ layout: end
   `}
 </div>
 
-⚠️ IMPORTANT: Génère UNIQUEMENT ce Markdown avec la structure corrigée pour two-cols, rien d'autre.`;
+Génère UNIQUEMENT ce Markdown, rien d'autre.`;
 
     return prompt;
 }
-
 // 🎬 CRÉATION PROMPT NARRATION SYNCHRONISÉ
 function createNarrationPrompt(planData, resourcesAnalysis, actualSlideCount) {
     const { topic, plan_sections, settings } = planData;
@@ -6335,6 +6316,7 @@ function cleanNarrationResponse(response) {
 }
 
 // 🔧 CRÉATION FALLBACK MARKDOWN CORRIGÉ
+// 🔧 CRÉATION FALLBACK MARKDOWN CORRIGÉ
 function createFallbackMarkdown(planData, resourcesAnalysis) {
     const { topic, plan_sections, settings } = planData;
     const { duration = 5 } = settings || {};
@@ -6362,7 +6344,7 @@ ${resourcesAnalysis.files_content_integrated ? `
 </div>
 
 ${plan_sections.map(section => {
-        // Utiliser layout default pour éviter les problèmes de two-cols
+        // 🚀 CORRECTION - Utiliser layout default avec structure correcte
         return `
 ---
 layout: default
@@ -6370,17 +6352,32 @@ layout: default
 
 # ${section.title}
 
-${section.what_to_cover ? section.what_to_cover.map(point => `- ${point}`).join('\n') : '- Contenu à développer'}
+<div class="max-w-4xl mx-auto mt-8">
+
+<div class="space-y-6">
+${section.what_to_cover ? section.what_to_cover.map(point => `
+<div class="bg-white p-4 rounded-lg border-l-4 border-blue-500">
+  <div class="font-semibold text-gray-800">• ${point}</div>
+</div>`).join('') : `
+<div class="bg-white p-4 rounded-lg border-l-4 border-blue-500">
+  <div class="font-semibold text-gray-800">• Contenu à développer</div>
+</div>`}
+</div>
 
 ${section.enhanced_with_resources ? `
-<div class="mt-6 p-4 bg-blue-50 rounded-lg">
-  💡 <strong>Adapté à vos ressources:</strong> ${section.content_summary || 'Contenu personnalisé'}
+<div class="mt-8 p-6 bg-blue-50 rounded-xl">
+  <h3 class="text-lg font-semibold mb-2 text-blue-700">💡 Adapté à vos ressources</h3>
+  <div class="text-sm text-blue-600">${section.content_summary || 'Contenu personnalisé'}</div>
 </div>
 ` : `
-<div class="mt-4 text-sm text-gray-600">
-⏱️ ${section.duration_seconds}s • ${section.type}
+<div class="mt-8 p-4 bg-gray-50 rounded-lg">
+  <div class="text-sm text-gray-600">
+    ⏱️ ${section.duration_seconds}s • ${section.type}
+  </div>
 </div>
-`}`;
+`}
+
+</div>`;
     }).join('')}
 
 ---
@@ -6389,7 +6386,11 @@ layout: end
 
 # Merci !
 
-Formation ${topic} terminée 🎉`;
+<div class="text-center">
+  <div class="text-6xl mb-4">🎉</div>
+  <div class="text-2xl">Formation ${topic} terminée</div>
+  <div class="text-lg text-gray-600 mt-2">Durée: ${duration} minutes</div>
+</div>`;
 }
 
 // 🔧 ROUTE SAUVEGARDE
